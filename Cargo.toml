@@ -1,0 +1,19 @@
+[workspace]
+members = ["src-tauri", "crates/manka-core"]
+resolver = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+opt-level = "s"
+strip = true
+
+[profile.dev]
+debug = 1
+
+# The upstream constant_time_eq build script is a tiny generated executable
+# that some endpoint protection suites quarantine, breaking the whole build.
+# The crate compiles fine with its portable implementation, so use the
+# vendored copy without a build script.
+[patch.crates-io]
+constant_time_eq = { path = "vendor/constant_time_eq" }

@@ -1,0 +1,20 @@
+[package]
+name = "constant_time_eq"
+version = "0.6.1"
+edition = "2021"
+rust-version = "1.66.0"
+authors = ["Cesar Eduardo Barros <cesarb@cesarb.eti.br>"]
+description = "Compares two equal-sized byte strings in constant time (vendored without build script)."
+license = "CC0-1.0 OR MIT-0 OR Apache-2.0"
+repository = "https://codeberg.org/cesarb/constant_time_eq"
+
+[features]
+default = ["std"]
+std = []
+
+[lib]
+name = "constant_time_eq"
+path = "src/lib.rs"
+
+[lints.rust]
+unexpected_cfgs = "allow"

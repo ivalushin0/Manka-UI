@@ -1,0 +1,54 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Manka",
+  "version": "0.2.1",
+  "identifier": "app.manka.desktop",
+  "build": {
+    "beforeDevCommand": "npm --prefix app run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm --prefix app run build",
+    "frontendDist": "../app/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Manka",
+        "width": 1180,
+        "height": 800,
+        "minWidth": 960,
+        "minHeight": 640,
+        "center": true,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": ["Russian", "English"]
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxRDI3RDMwRTNDQTZBRkQKUldUOWFzcmpNSDNTc1dEcE1XUWRKYmg1T3pZUlRDaEZ2YmVBc1NDY1FvYWVHbDJxeTdxVTJHbGgK"
+    }
+  }
+}

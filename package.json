@@ -1,0 +1,14 @@
+{
+  "name": "manka-ui",
+  "private": true,
+  "version": "0.2.1",
+  "description": "Manka for Windows — bypass DPI, TG WS Proxy and strategy autoselect",
+  "scripts": {
+    "dev": "npm --prefix app run dev",
+    "build": "npm --prefix app run build",
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.12.0"
+  }
+}
