@@ -46,7 +46,7 @@ $env:CARGO_TARGET_DIR="$env:LOCALAPPDATA\Temp\manka-target"
 
 ```powershell
 .\node_modules\.bin\tauri.cmd build
-# target\release\bundle\nsis\Manka_0.2.1_x64-setup.exe
+# target\release\bundle\nsis\Manka_0.2.2_x64-setup.exe
 # target\release\bundle\nsis\latest.json (манифест обновлений)
 ```
 
@@ -83,7 +83,8 @@ store-index\         снимок CDPIUI-Store
 Manka умеет проверять и устанавливать обновления из GitHub Releases (плагин `tauri-plugin-updater`).
 
 1. Создайте **публичный** репозиторий и запушьте туда проект.
-2. В приложении: **Настройки → Обновления Manka** → укажите репозиторий в формате `owner/repo`.
+2. В приложении: **Настройки → Обновления Manka** → репозиторий уже заполнен как
+   `ivalushin0/Manka-UI`; при форке укажите свой в формате `owner/repo`.
 3. В настройках репозитория на GitHub добавьте секреты Actions:
    - `TAURI_SIGNING_PRIVATE_KEY` — содержимое файла `%USERPROFILE%\.manka\updater.key`;
    - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` — оставьте пустым, если ключ без пароля.

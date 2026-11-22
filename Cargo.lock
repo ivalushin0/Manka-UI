@@ -2414,7 +2414,7 @@ checksum = "5d15f86d12da44cd8d4ec3c73984537eb7f4cadcb9776a575a0a8a05ca11005c"
 
 [[package]]
 name = "manka"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "manka-core",
  "serde",
@@ -2432,7 +2432,7 @@ dependencies = [
 
 [[package]]
 name = "manka-core"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "chrono",
  "futures-util",

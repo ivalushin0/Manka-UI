@@ -143,7 +143,7 @@ impl Default for Settings {
 
             update_interval_hours: default_interval(),
             last_update_check: 0,
-            update_repo: String::new(),
+            update_repo: "ivalushin0/Manka-UI".into(),
             auto_update_check: true,
             app_update_interval_hours: 24,
             last_app_update_check: 0,

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Manka",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "identifier": "app.manka.desktop",
   "build": {
     "beforeDevCommand": "npm --prefix app run dev",
@@ -46,7 +46,7 @@
   "plugins": {
     "updater": {
       "endpoints": [
-        "https://github.com/OWNER/REPO/releases/latest/download/latest.json"
+        "https://github.com/ivalushin0/Manka-UI/releases/latest/download/latest.json"
       ],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIxRDI3RDMwRTNDQTZBRkQKUldUOWFzcmpNSDNTc1dEcE1XUWRKYmg1T3pZUlRDaEZ2YmVBc1NDY1FvYWVHbDJxeTdxVTJHbGgK"
     }
