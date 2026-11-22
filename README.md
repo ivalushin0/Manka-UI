@@ -1,5 +1,8 @@
 # Manka для Windows
 
+[![Release](https://github.com/ivalushin0/Manka-UI/actions/workflows/release.yml/badge.svg)](https://github.com/ivalushin0/Manka-UI/actions/workflows/release.yml)
+[Скачать последнюю версию](https://github.com/ivalushin0/Manka-UI/releases/latest)
+
 Обход DPI для Windows — десктопная версия [Manka для Android](https://github.com/ivalushin0/manka).
 Один интерфейс для **Zapret 2 / Zapret**, **TG WS Proxy** и **автоподбора стратегий**.
 Приложение ничего не подменяет в сети само: оно управляет официальными движками
