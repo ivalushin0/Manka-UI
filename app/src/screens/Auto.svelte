@@ -2,7 +2,7 @@
   import Icon from "../lib/Icon.svelte";
   import { store } from "../lib/store.svelte";
   import { fmtTime, percent } from "../lib/utils";
-  import type { CandidateResult, Engine, SavedResult } from "../lib/types";
+  import type { Engine } from "../lib/types";
 
   const settings = $derived(store.settings);
   const auto = $derived(store.auto);
@@ -11,6 +11,8 @@
 
   let expandedResults = $state<Set<string>>(new Set());
   let expandedHistory = $state<Set<string>>(new Set());
+  let expandedBaseline = $state<Set<string>>(new Set());
+  let expandedSites = $state<Set<string>>(new Set());
   let showAllHistory = $state(false);
   let historyQuery = $state("");
 
@@ -77,6 +79,24 @@
     expandedHistory = next;
   }
 
+  function toggleBaseline(id: string) {
+    const next = new Set(expandedBaseline);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    expandedBaseline = next;
+  }
+
+  function siteKey(runId: string, strategyId: string): string {
+    return `${runId}::${strategyId}`;
+  }
+
+  function toggleSites(key: string) {
+    const next = new Set(expandedSites);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    expandedSites = next;
+  }
+
   function applyCandidate(r: { engine: string; name: string; template: string; percent: number }) {
     void store.applyAuto({
       engine: r.engine as Engine,
@@ -84,10 +104,6 @@
       template: r.template,
       percent: r.percent,
     });
-  }
-
-  function sitesSummary(r: SavedResult | CandidateResult): string {
-    return r.sites.map((s) => `${s.url}: ${s.ok}/${s.total}`).join("\n");
   }
 
   function percentClass(p: number): string {
@@ -337,7 +353,8 @@
                 <span class="grow" style="min-width:0">
                   <span class="name">{fmtTime(run.time)}</span>
                   <span class="sub" style="display:block">
-                    {run.tested} стратегий · без обхода {run.baseline_total ? percent(run.baseline_ok, run.baseline_total) : 0}%
+                    {run.tested} стратегий · без обхода {run.baseline_ok}/{run.baseline_total}
+                    ({run.baseline_total ? percent(run.baseline_ok, run.baseline_total) : 0}%)
                     · лучшая {run.results[0]?.percent ?? 0}%
                   </span>
                 </span>
@@ -354,6 +371,38 @@
                     <span>· проверено: {run.tested}</span>
                     <span>· результатов сохранено: {run.results.length}</span>
                   </div>
+
+                  {#if run.baseline && run.baseline.length}
+                    {@const bopen = expandedBaseline.has(run.id)}
+                    <div class="baseline">
+                      <div class="row-between">
+                        <span class="small muted">
+                          Без обхода: <b>{run.baseline_ok}/{run.baseline_total}</b>
+                          ({run.baseline_total ? percent(run.baseline_ok, run.baseline_total) : 0}%)
+                        </span>
+                        <button class="btn small ghost" onclick={() => toggleBaseline(run.id)}>
+                          {bopen ? "Скрыть сайты" : "Какие сайты не открылись"}
+                        </button>
+                      </div>
+                      {#if bopen}
+                        <div class="site-table">
+                          {#each run.baseline as site (site.url)}
+                            <div class="site">
+                              <span class="badge {site.ok === site.total ? 'ok' : site.ok ? 'warn' : 'bad'}">{site.ok}/{site.total}</span>
+                              <span class="mono wrap grow">{site.url}</span>
+                              {#if site.status}<span class="small dim">HTTP {site.status}</span>{/if}
+                              {#if site.error}<span class="small" style="color:#ffb4b4">{site.error}</span>{/if}
+                            </div>
+                          {/each}
+                        </div>
+                      {/if}
+                    </div>
+                  {:else}
+                    <div class="small dim" style="margin-bottom:10px">
+                      Для этого прогона детали базовой проверки не сохранялись.
+                    </div>
+                  {/if}
+
                   {#if run.targets.length}
                     <div class="row small" style="margin-bottom:10px">
                       {#each run.targets.slice(0, 8) as t (t)}
@@ -364,28 +413,44 @@
                   {/if}
                   <div class="hist-table">
                     {#each run.results as r (resultKey(r))}
-                      <div class="hist-row">
-                        <span class="badge {percentClass(r.percent)}">{r.percent}%</span>
-                        <div class="grow" style="min-width:0">
-                          <div class="name" title={r.name}>{prettyName(r)}</div>
-                          <div class="sub">
-                            {r.engine === "zapret2" ? "Zapret 2" : "Zapret"} · {r.ok}/{r.total}
-                            {#if r.avg_ms} · {r.avg_ms} мс{/if}
-                            {#if r.start_error} · <span style="color:#ffb4b4">не запустилась</span>{/if}
+                      {@const skey = siteKey(run.id, r.strategy_id)}
+                      {@const sopen = expandedSites.has(skey)}
+                      <div class="hist-result">
+                        <div class="hist-row">
+                          <span class="badge {percentClass(r.percent)}">{r.percent}%</span>
+                          <div class="grow" style="min-width:0">
+                            <div class="name" title={r.name}>{prettyName(r)}</div>
+                            <div class="sub">
+                              {r.engine === "zapret2" ? "Zapret 2" : "Zapret"} · {r.ok}/{r.total}
+                              {#if r.avg_ms} · {r.avg_ms} мс{/if}
+                              {#if r.start_error} · <span style="color:#ffb4b4">не запустилась</span>{/if}
+                            </div>
                           </div>
+                          {#if r.sites.length}
+                            <button class="btn small ghost" onclick={() => toggleSites(skey)}>
+                              {sopen ? "Свернуть сайты" : "Сайты"}
+                            </button>
+                          {/if}
+                          <button
+                            class="btn small"
+                            disabled={r.percent === 0 || running}
+                            onclick={() => applyCandidate(r)}
+                          >
+                            Применить
+                          </button>
                         </div>
-                        {#if r.sites.length}
-                          <span class="sites-badge" title={sitesSummary(r)}>
-                            {r.sites.filter((s) => s.ok === s.total).length}/{r.sites.length} целей
-                          </span>
+                        {#if sopen}
+                          <div class="site-table hist-sites">
+                            {#each r.sites as site (site.url)}
+                              <div class="site">
+                                <span class="badge {site.ok === site.total ? 'ok' : site.ok ? 'warn' : 'bad'}">{site.ok}/{site.total}</span>
+                                <span class="mono wrap grow">{site.url}</span>
+                                {#if site.avg_ms}<span class="small dim">{site.avg_ms} мс</span>{/if}
+                                {#if site.error}<span class="small" style="color:#ffb4b4">{site.error}</span>{/if}
+                              </div>
+                            {/each}
+                          </div>
                         {/if}
-                        <button
-                          class="btn small"
-                          disabled={r.percent === 0 || running}
-                          onclick={() => applyCandidate(r)}
-                        >
-                          Применить
-                        </button>
                       </div>
                     {/each}
                   </div>
@@ -516,12 +581,35 @@
     background: rgba(9, 14, 24, 0.45);
   }
 
-  .sites-badge {
-    font-size: 11px;
-    color: var(--dim);
-    white-space: nowrap;
-    cursor: help;
-    border-bottom: 1px dotted #33456a;
+  .baseline {
+    border: 1px solid var(--line-soft);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin-bottom: 10px;
+    background: rgba(9, 14, 24, 0.4);
+  }
+
+  .site-table {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    margin-top: 8px;
+  }
+
+  .hist-result {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+  }
+
+  .hist-sites {
+    margin-left: 10px;
+    padding: 8px 10px;
+    border-left: 2px solid rgba(124, 92, 255, 0.4);
+    background: rgba(7, 11, 19, 0.45);
+    border-radius: 0 8px 8px 0;
+    max-height: 220px;
+    overflow: auto;
   }
 
   @keyframes reveal {

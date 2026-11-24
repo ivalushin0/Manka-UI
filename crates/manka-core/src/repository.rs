@@ -49,26 +49,22 @@ pub fn save_auto(paths: &Paths, name: &str, engine: Engine, template: &str, perc
         .iter()
         .find(|s| s.source == Source::Auto && s.template == template && s.engine == engine)
     {
-        if existing.name.trim_start().starts_with('-') {
-            let short: String = name
-                .trim_start_matches('-')
-                .replace("lua-desync=", "")
-                .replace([':', '='], " ")
-                .chars()
-                .take(48)
-                .collect();
-            let new_name = format!(
-                "Авто · {} · {short}",
-                chrono::Local::now().format("%d.%m %H:%M")
-            );
-            let mut fixed = existing.clone();
-            fixed.name = new_name;
-            let _ = save_user(paths, fixed.clone());
-            return Ok(fixed);
+        let mut found = existing.clone();
+        found.score = Some(percent);
+        if found.name.trim_start().starts_with('-') {
+            found.name = auto_display_name(name);
         }
-        return Ok(existing.clone());
+        let _ = save_user(paths, found.clone());
+        return Ok(found);
     }
-    let display_name = if name.trim_start().starts_with('-') {
+    let strategy = auto_strategy(engine, name, template, percent);
+    list.push(strategy.clone());
+    save_user_strategies(paths, &list)?;
+    Ok(strategy)
+}
+
+fn auto_display_name(name: &str) -> String {
+    if name.trim_start().starts_with('-') {
         let short: String = name
             .trim_start_matches('-')
             .replace("lua-desync=", "")
@@ -82,15 +78,38 @@ pub fn save_auto(paths: &Paths, name: &str, engine: Engine, template: &str, perc
         )
     } else {
         name.to_string()
-    };
+    }
+}
+
+fn auto_strategy(engine: Engine, name: &str, template: &str, percent: u32) -> Strategy {
     let id = format!("auto-{}", crate::util::hash_id(template));
-    let mut s = Strategy::new(id, engine, display_name, template);
+    let mut s = Strategy::new(id, engine, auto_display_name(name), template);
     s.source = Source::Auto;
     s.score = Some(percent);
     s.created_at = crate::util::now_ms();
-    list.push(s.clone());
-    save_user_strategies(paths, &list)?;
-    Ok(s)
+    s
+}
+
+/// Save/update a batch of autoselection results in one write. Used at the end
+/// of a run so every successful strategy is visible on the Strategies screen.
+pub fn save_auto_results(
+    paths: &Paths,
+    items: &[(Engine, String, String, u32)],
+) -> Result<(), String> {
+    if items.is_empty() {
+        return Ok(());
+    }
+    let mut list = user_strategies(paths);
+    for (engine, name, template, percent) in items {
+        if let Some(existing) = list.iter_mut().find(|s| {
+            s.source == Source::Auto && s.engine == *engine && s.template == *template
+        }) {
+            existing.score = Some(*percent);
+            continue;
+        }
+        list.push(auto_strategy(*engine, name, template, *percent));
+    }
+    save_user_strategies(paths, &list)
 }
 
 pub fn save_user(paths: &Paths, strategy: Strategy) -> Result<(), String> {

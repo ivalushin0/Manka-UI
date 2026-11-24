@@ -18,8 +18,12 @@
   const activeId = $derived(store.settings?.active[engine]);
   const currentEngine = $derived(store.settings?.engine);
 
-  function isCurrent(s: Strategy): boolean {
-    return s.id === activeId && currentEngine === s.engine;
+  function isSelected(s: Strategy): boolean {
+    return s.id === activeId;
+  }
+
+  function isRunning(s: Strategy): boolean {
+    return isSelected(s) && currentEngine === s.engine && store.engineRunning;
   }
 
   const base = $derived.by(() => {
@@ -29,15 +33,21 @@
 
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
-    return base.filter((s) => {
-      if (source !== "all" && s.source !== source) return false;
-      if (!q) return true;
-      return (
-        s.name.toLowerCase().includes(q) ||
-        (s.description ?? "").toLowerCase().includes(q) ||
-        s.tags.some((t) => t.toLowerCase().includes(q))
-      );
-    });
+    return base
+      .filter((s) => {
+        if (source !== "all" && s.source !== source) return false;
+        if (!q) return true;
+        return (
+          s.name.toLowerCase().includes(q) ||
+          (s.description ?? "").toLowerCase().includes(q) ||
+          s.tags.some((t) => t.toLowerCase().includes(q))
+        );
+      })
+      .sort((a, b) => {
+        const ac = isSelected(a) ? 1 : 0;
+        const bc = isSelected(b) ? 1 : 0;
+        return bc - ac || (b.score ?? -1) - (a.score ?? -1) || a.name.localeCompare(b.name, "ru");
+      });
   });
 
   const counts = $derived.by(() => {
@@ -127,6 +137,11 @@
     </div>
   </div>
 
+  <div class="small dim" style="margin-top:-6px">
+    Фиолетовой рамкой выделена только активная стратегия. «Применить» переключает движок на выбранный вариант;
+    процент у стратегий автоподбора — результат последней проверки.
+  </div>
+
   {#if filtered.length === 0}
     <div class="empty">
       Ничего не найдено. Установите наборы в «Компонентах» или откройте каталог.
@@ -135,18 +150,18 @@
 
   <div class="list">
     {#each filtered as s (s.id)}
-      <div class="list-item active" style="align-items:flex-start">
-        <span class="dot" class:ok={isCurrent(s)} style="margin-top:6px"></span>
+      <div class="list-item" class:active={isSelected(s)} style="align-items:flex-start">
+        <span class="dot" class:ok={isRunning(s)} style="margin-top:6px"></span>
         <div class="grow">
           <div class="row">
             <span class="name">{s.name}</span>
             <span class="badge {badgeClass(s)}">{sourceTitle(s.source)}</span>
             {#if s.game_filter}<span class="badge warn">game</span>{/if}
             {#if s.score != null}<span class="badge ok">{s.score}%</span>{/if}
-            {#if isCurrent(s)}
+            {#if isRunning(s)}
               <span class="badge ok">работает</span>
-            {:else if s.id === activeId}
-              <span class="badge muted">выбрана</span>
+            {:else if isSelected(s)}
+              <span class="badge muted">активна для движка</span>
             {/if}
           </div>
           {#if s.description}
@@ -200,8 +215,18 @@
           <button class="btn small" onclick={() => (expanded = expanded === s.id ? null : s.id)}>
             {expanded === s.id ? "Свернуть" : "Параметры"}
           </button>
-          <button class="btn small primary" onclick={() => apply(s)} disabled={store.busy || isCurrent(s)}>
-            {s.id === activeId && !isCurrent(s) ? "Переключить" : "Применить"}
+          <button
+            class="btn small"
+            onclick={() => apply(s)}
+            disabled={store.busy || (isSelected(s) && currentEngine === s.engine)}
+          >
+            {isRunning(s)
+              ? "Работает"
+              : isSelected(s)
+                ? currentEngine === s.engine
+                  ? "Выбрана"
+                  : "Переключить движок"
+                : "Применить"}
           </button>
           {#if s.source === "auto" || s.source === "user"}
             <button

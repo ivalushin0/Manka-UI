@@ -82,6 +82,14 @@
       <label class="check">
         <input
           type="checkbox"
+          checked={settings?.start_minimized ?? true}
+          onchange={(e) => store.saveSettings({ start_minimized: (e.target as HTMLInputElement).checked })}
+        />
+        Запускать Manka скрыто — только иконка в трее
+      </label>
+      <label class="check">
+        <input
+          type="checkbox"
           checked={settings?.debug_logs ?? false}
           onchange={(e) => store.saveSettings({ debug_logs: (e.target as HTMLInputElement).checked })}
         />

@@ -1187,15 +1187,6 @@ pub fn run() {
     let paths = Paths::detect();
     let _ = paths.ensure();
     let _ = manka_core::settings::ensure_exclude_list(&paths);
-    if manka_core::util::is_elevated() {
-        let killed = manka_core::util::kill_stale_components(&paths.components());
-        if killed > 0 {
-            manka_core::util::append_log(
-                &paths.logs().join("app.log"),
-                &format!("cleaned up {killed} stale component process(es)"),
-            );
-        }
-    }
     let mut settings = Settings::load(&paths);
     if settings.tgws_secret.trim().is_empty() {
         settings.tgws_secret = Settings::default().tgws_secret;
@@ -1223,7 +1214,24 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
         .setup(|app| {
+            // Only the primary instance reaches setup; a second launch just
+            // focuses the running window. Cleaning stale components here keeps
+            // a second launch from killing the live engine.
+            if manka_core::util::is_elevated() {
+                let state = app.state::<CoreState>();
+                let killed = manka_core::util::kill_stale_components(&state.paths.components());
+                if killed > 0 {
+                    app_log(&state, &format!("cleaned up {killed} stale component process(es)"));
+                }
+            }
             build_tray(app)?;
+            let start_hidden = settings_of(&app.state::<CoreState>()).start_minimized;
+            if !start_hidden {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+            }
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<CoreState>();

@@ -10,6 +10,8 @@
   const zapret = $derived(store.data?.components.find((c) => c.id === "zapret"));
   const tgws = $derived(store.data?.components.find((c) => c.id === "tgws"));
   const proxyOn = $derived(store.data?.proxy.running ?? false);
+  const installed = $derived((store.data?.components ?? []).filter((c) => c.installed && c.kind !== "proxy"));
+  const dpiInstalled = $derived(installed.length > 0);
 
   const powerClass = $derived(
     store.engineRunning ? "on" : settings?.enabled ? "warn" : store.elevated ? "" : "bad",
@@ -136,6 +138,46 @@
     </div>
   </div>
 
+  <div class="card">
+    <div class="card-title">
+      <Icon name="package" size={17} /> Установленные движки DPI
+      <span class="badge muted">{installed.length}</span>
+    </div>
+    {#if installed.length}
+      <div class="grid-2">
+        {#each installed as c (c.id)}
+          {@const active = store.engineRunning}
+          <div class="list-item">
+            <span class="dot" class:ok={active}></span>
+            <div class="grow" style="min-width:0">
+              <div class="name">{c.name}</div>
+              <div class="sub">
+                {c.version ? `v${c.version.replace(/^v/i, "")}` : "установлен"} · движок DPI
+              </div>
+            </div>
+            <button
+              class="btn small"
+              class:primary={!active}
+              class:danger={active}
+              onclick={() => store.togglePower()}
+              disabled={store.busy || !store.elevated}
+            >
+              {active ? "Остановить" : "Запустить"}
+            </button>
+          </div>
+        {/each}
+      </div>
+      <div class="small dim" style="margin-top:10px;line-height:1.5">
+        Движок DPI может быть активен только один. Telegram-прокси работает отдельно и может быть включён
+        одновременно с обходом.
+      </div>
+    {:else}
+      <div class="empty">
+        Движок DPI не установлен. Откройте «Компоненты» и установите Zapret 2.
+      </div>
+    {/if}
+  </div>
+
   {#if store.progress.zapret && !store.progress.zapret.stage.includes("Готово")}
     <div class="card flat">
       <div class="row-between small">
@@ -209,12 +251,27 @@
     <div class="card">
       <div class="card-title">
         <Icon name="layers" size={17} /> Текущий профиль
-        <span class="badge muted">{settings?.engine === "zapret2" ? "zapret2" : settings?.engine}</span>
+        <span class="badge muted">{settings?.engine === "zapret2" ? "Zapret 2" : "Zapret legacy"}</span>
       </div>
+      {#if dpiInstalled}
+        <div class="tabs" style="margin-bottom:12px">
+          <button class:on={settings?.engine === "zapret2"} onclick={() => store.saveSettings({ engine: "zapret2" })}>
+            Zapret 2 · winws2
+          </button>
+          <button class:on={settings?.engine === "zapret"} onclick={() => store.saveSettings({ engine: "zapret" })}>
+            Zapret legacy · winws
+          </button>
+        </div>
+      {/if}
       {#if active}
-        <div class="name" style="font-weight:600">{active.name}</div>
-        <div class="sub dim small" style="margin-top:4px">
-          {active.description ?? (active.tags.length ? active.tags.map((t) => "#" + t).join(" ") : "Стратегия готова к запуску")}
+        <div class="row" style="align-items:flex-start">
+          <div class="grow">
+            <div class="name" style="font-weight:600">{active.name}</div>
+            <div class="sub dim small" style="margin-top:4px">
+              {active.description ?? (active.tags.length ? active.tags.map((t) => "#" + t).join(" ") : "Стратегия готова к запуску")}
+            </div>
+          </div>
+          {#if active.score != null}<span class="badge ok">{active.score}%</span>{/if}
         </div>
         <div class="row small muted" style="margin-top:12px">
           <span class="badge">{sourceTitle(active.source)}</span>
@@ -222,7 +279,7 @@
           {#if active.game_filter}<span class="badge warn">game filter</span>{/if}
         </div>
       {:else}
-        <div class="small muted">Стратегия не выбрана. Выберите её на вкладке «Стратегии».</div>
+        <div class="small muted">Для выбранного движка стратегия не выбрана. Выберите её на вкладке «Стратегии».</div>
       {/if}
       <div class="row" style="margin-top:14px">
         <button class="btn small" onclick={() => (store.screen = "strategies")}>Сменить стратегию</button>

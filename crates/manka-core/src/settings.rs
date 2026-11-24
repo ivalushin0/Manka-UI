@@ -119,7 +119,7 @@ impl Default for Settings {
             block_quic: true,
             autostart: false,
             minimize_to_tray: true,
-            start_minimized: false,
+            start_minimized: true,
 
             tgws_enabled: false,
             tgws_port: default_port(),

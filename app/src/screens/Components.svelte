@@ -5,21 +5,35 @@
   import Markdown from "../lib/Markdown.svelte";
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
-  import { cleanMarkdown } from "../lib/utils";
+  import { cleanMarkdown, fmtTime } from "../lib/utils";
   import type { ComponentStatus, StoreItem } from "../lib/types";
 
   onMount(() => {
     void store.loadStore();
+    if (Date.now() - store.componentsCheckedAt > 10 * 60_000) {
+      void store.checkUpdates(true);
+    }
   });
 
   const components = $derived(store.data?.components ?? []);
+  const dpiComponents = $derived(components.filter((c) => c.kind !== "proxy"));
+  const proxyComponents = $derived(components.filter((c) => c.kind === "proxy"));
+  const installedDpi = $derived(dpiComponents.filter((c) => c.installed));
+  const availableDpi = $derived(dpiComponents.filter((c) => !c.installed));
 
   let query = $state("");
   let kind = $state<"all" | "configlist" | "lsubscription">("all");
   let detail = $state<StoreItem | null>(null);
   let componentDetail = $state<ComponentStatus | null>(null);
 
-  const storeItems = $derived(store.storeItems);
+  const storeItems = $derived(store.storeItems.filter((i) => i.kind !== "component"));
+  const unsupported = $derived(
+    store.storeItems.filter(
+      (i) =>
+        i.kind === "component" &&
+        !/zapret|tg[\s_-]?ws/i.test(`${i.name} ${i.short_name} ${i.store_id}`),
+    ),
+  );
 
   const filtered = $derived.by(() => {
     const q = query.trim().toLowerCase();
@@ -74,6 +88,12 @@
     return v.toLowerCase() === "installed" ? "установлен" : `установлен ${v}`;
   }
 
+  function checkLabel(c: ComponentStatus): string {
+    if (!c.installed) return "не установлен";
+    if (c.update_available) return `есть ${c.latest ?? "новее"}`;
+    return store.componentsCheckedAt ? "актуально" : "не проверено";
+  }
+
   function note(c: ComponentStatus): string {
     if (c.id === "tgws") {
       return `MTProto-прокси без трея, 127.0.0.1:${store.settings?.tgws_port ?? 1443}`;
@@ -106,6 +126,64 @@
   }
 </script>
 
+{#snippet componentCard(c)}
+  {@const p = progressFor(c.id)}
+  <div class="card comp" class:installed={c.installed} class:available={!c.installed}>
+    <div class="card-title">
+      <span class="comp-icon" class:on={c.installed}>
+        <Icon name={c.id === "tgws" ? "send" : "shield"} size={20} />
+      </span>
+      <div class="grow" style="min-width:0">
+        <div>{c.name}</div>
+        <div class="small dim" style="font-weight:400">{note(c)}</div>
+      </div>
+      <span class="badge" class:ok={c.installed} class:muted={!c.installed}>
+        {c.installed ? version(c.version) : "не установлен"}
+      </span>
+    </div>
+    {#if c.installed}
+      <div style="margin-bottom:10px">
+        <span class="badge" class:ok={!c.update_available} class:warn={c.update_available}>{checkLabel(c)}</span>
+      </div>
+    {/if}
+
+    {#if p}
+      <div class="row-between small" style="margin-bottom:6px">
+        <span>{p.stage}</span>
+        <span class="dim">{p.percent}%</span>
+      </div>
+      <div class="progress" style="margin-bottom:12px"><span style="width:{p.percent}%"></span></div>
+    {/if}
+
+    {#if c.update_available}
+      <div class="banner" style="padding:8px 11px;margin-bottom:10px">
+        <Icon name="download" size={15} />
+        <span class="grow small">Доступно обновление {c.latest}</span>
+      </div>
+    {/if}
+
+    <div class="row">
+      {#if !c.installed}
+        <button class="btn primary" onclick={() => store.installComponent(c.id)} disabled={store.busy || !!p}>
+          <Icon name="download" size={15} /> Установить
+        </button>
+      {:else if c.update_available}
+        <button class="btn primary" onclick={() => store.updateComponent(c.id)} disabled={store.busy || !!p}>
+          <Icon name="refresh" size={15} /> Обновить до {c.latest}
+        </button>
+      {:else}
+        <button class="btn small ghost" onclick={() => store.updateComponent(c.id)} disabled={store.busy || !!p}>
+          <Icon name="refresh" size={14} /> Переустановить
+        </button>
+      {/if}
+      <button class="btn small ghost" onclick={() => (componentDetail = c)}>Подробнее</button>
+      {#if c.id === "zapret" && c.installed}
+        <button class="btn small ghost" onclick={() => store.rollbackZapret()} disabled={store.busy}>Откатить</button>
+      {/if}
+    </div>
+  </div>
+{/snippet}
+
 <div class="page">
   <div class="page-head">
     <div>
@@ -113,60 +191,43 @@
       <div class="page-sub">Движки, Telegram-прокси и наборы стратегий из магазина CDPI</div>
     </div>
     <div class="row">
-      <button class="btn small" onclick={() => store.checkUpdates()} disabled={store.busy}>
-        <Icon name="refresh" size={14} /> Проверить обновления
+      {#if store.componentsChecking}
+        <span class="small dim">Проверяю обновления…</span>
+      {:else if store.componentsCheckedAt}
+        <span class="small dim">Проверено {fmtTime(store.componentsCheckedAt)}</span>
+      {/if}
+      <button class="btn small" onclick={() => store.checkUpdates()} disabled={store.componentsChecking}>
+        <Icon name="refresh" size={14} /> {store.componentsChecking ? "Проверяю…" : "Проверить обновления"}
       </button>
     </div>
   </div>
 
+  <div class="section-label">Установленные движки DPI</div>
+  {#if installedDpi.length}
+    <div class="grid-2">
+      {#each installedDpi as c (c.id)}
+        {@render componentCard(c)}
+      {/each}
+    </div>
+  {:else}
+    <div class="empty">
+      Движок DPI не установлен. Выберите доступный движок ниже и нажмите «Установить».
+    </div>
+  {/if}
+
+  {#if availableDpi.length}
+    <div class="section-label">Доступные для установки</div>
+    <div class="grid-2">
+      {#each availableDpi as c (c.id)}
+        {@render componentCard(c)}
+      {/each}
+    </div>
+  {/if}
+
+  <div class="section-label">Telegram-прокси</div>
   <div class="grid-2">
-    {#each components as c (c.id)}
-      {@const p = progressFor(c.id)}
-      <div class="card comp" class:installed={c.installed}>
-        <div class="card-title">
-          <span class="comp-icon" class:on={c.installed}>
-            <Icon name={c.id === "tgws" ? "send" : "shield"} size={20} />
-          </span>
-          <div class="grow" style="min-width:0">
-            <div>{c.name}</div>
-            <div class="small dim" style="font-weight:400">{note(c)}</div>
-          </div>
-          <span class="badge" class:ok={c.installed} class:muted={!c.installed}>
-            {c.installed ? version(c.version) : "не установлен"}
-          </span>
-        </div>
-
-        {#if p}
-          <div class="row-between small" style="margin-bottom:6px">
-            <span>{p.stage}</span>
-            <span class="dim">{p.percent}%</span>
-          </div>
-          <div class="progress" style="margin-bottom:12px"><span style="width:{p.percent}%"></span></div>
-        {/if}
-
-        {#if c.update_available}
-          <div class="banner" style="padding:8px 11px;margin-bottom:10px">
-            <Icon name="download" size={15} />
-            <span class="grow small">Доступно обновление {c.latest}</span>
-          </div>
-        {/if}
-
-        <div class="row">
-          {#if !c.installed}
-            <button class="btn primary" onclick={() => store.installComponent(c.id)} disabled={store.busy || !!p}>
-              <Icon name="download" size={15} /> Установить
-            </button>
-          {:else}
-            <button class="btn" onclick={() => store.updateComponent(c.id)} disabled={store.busy || !!p}>
-              <Icon name="refresh" size={15} /> Обновить
-            </button>
-          {/if}
-          <button class="btn small ghost" onclick={() => (componentDetail = c)}>Подробнее</button>
-          {#if c.id === "zapret" && c.installed}
-            <button class="btn small ghost" onclick={() => store.rollbackZapret()} disabled={store.busy}>Откатить</button>
-          {/if}
-        </div>
-      </div>
+    {#each proxyComponents as c (c.id)}
+      {@render componentCard(c)}
     {/each}
   </div>
 
@@ -197,6 +258,13 @@
       </div>
       <span class="badge muted">{filtered.length}</span>
     </div>
+
+    {#if unsupported.length}
+      <div class="small dim" style="margin:-4px 0 10px;line-height:1.5">
+        Движки из каталога CDPI (ByeDPI, GoodbyeDPI, NoDPI, SpoofDPI) Manka пока не поддерживает — они
+        показаны ниже только для справки. Zapret 2 и TG WS Proxy управляются выше.
+      </div>
+    {/if}
 
     {#if storeProgress}
       <div class="row-between small" style="margin-bottom:6px">
@@ -242,7 +310,7 @@
                 Подробнее
               </button>
               <button class="btn small primary" onclick={() => store.installStoreItem(item.store_id)} disabled={store.busy}>
-                {item.installed_version ? "Обновить" : "Установить"}
+                {item.installed_version ? "Переустановить" : "Установить"}
               </button>
               {#if item.installed_version}
                 <button class="btn small danger" onclick={() => store.removeStoreItem(item.store_id)} disabled={store.busy} title="Удалить">
@@ -255,6 +323,31 @@
       </div>
     {/if}
   </div>
+
+  {#if unsupported.length}
+    <div class="card">
+      <div class="card-title">
+        <Icon name="package" size={17} /> Другие движки CDPI
+        <span class="badge muted">{unsupported.length}</span>
+      </div>
+      <div class="small dim" style="margin-bottom:10px;line-height:1.5">
+        Эти компоненты есть в каталоге CDPI, но Manka пока не умеет их запускать. Управляемые движки —
+        Zapret 2 и Telegram-прокси выше.
+      </div>
+      <div class="list">
+        {#each unsupported as item (item.store_id)}
+          <div class="list-item">
+            <div class="grow" style="min-width:0">
+              <div class="name">{item.short_name || item.name}</div>
+              <div class="sub">{item.developer || "CDPI"}</div>
+            </div>
+            <span class="badge muted">не поддерживается</span>
+            <button class="btn small ghost" onclick={() => (detail = item)}>Подробнее</button>
+          </div>
+        {/each}
+      </div>
+    </div>
+  {/if}
 
   {#if store.data?.kits?.length}
     <div class="card">
@@ -325,7 +418,9 @@
     onclose={() => (detail = null)}
   >
     <div class="row" style="margin-bottom:12px">
-      {#if detail.installed_version}
+      {#if detail.kind === "component"}
+        <span class="badge muted">не поддерживается Manka</span>
+      {:else if detail.installed_version}
         <span class="badge ok">{installedLabel(detail.installed_version)}</span>
       {:else}
         <span class="badge muted">не установлен</span>
@@ -356,14 +451,18 @@
     </div>
 
     <div class="row" style="justify-content:flex-end;margin-top:16px">
-      {#if detail.installed_version}
-        <button class="btn danger" onclick={() => removeItem(detail!)} disabled={store.busy}>
-          <Icon name="trash" size={14} /> Удалить
+      {#if detail.kind === "component"}
+        <button class="btn" onclick={() => (detail = null)}>Закрыть</button>
+      {:else}
+        {#if detail.installed_version}
+          <button class="btn danger" onclick={() => removeItem(detail!)} disabled={store.busy}>
+            <Icon name="trash" size={14} /> Удалить
+          </button>
+        {/if}
+        <button class="btn primary" onclick={() => installItem(detail!)} disabled={store.busy}>
+          <Icon name="download" size={15} /> {detail.installed_version ? "Переустановить" : "Установить"}
         </button>
       {/if}
-      <button class="btn primary" onclick={() => installItem(detail!)} disabled={store.busy}>
-        <Icon name="download" size={15} /> {detail.installed_version ? "Переустановить" : "Установить"}
-      </button>
     </div>
   </Modal>
 {/if}
@@ -389,6 +488,24 @@
     color: var(--accent-2);
     border-color: rgba(34, 211, 238, 0.35);
     background: rgba(34, 211, 238, 0.08);
+  }
+
+  .comp.available {
+    border-style: dashed;
+    background: rgba(10, 15, 24, 0.45);
+  }
+
+  .comp.available .comp-icon {
+    color: var(--muted);
+  }
+
+  .section-label {
+    font-size: 11.5px;
+    font-weight: 600;
+    letter-spacing: 0.45px;
+    text-transform: uppercase;
+    color: var(--dim);
+    margin: 2px 2px -4px;
   }
 
   .store-toolbar {

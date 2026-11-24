@@ -152,6 +152,7 @@ export interface HistoryRun {
   targets: string[];
   baseline_ok: number;
   baseline_total: number;
+  baseline?: SiteResult[];
   tested: number;
   results: SavedResult[];
 }

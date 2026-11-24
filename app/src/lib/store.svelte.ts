@@ -36,6 +36,8 @@ class Store {
 
   storeItems = $state<StoreItem[]>([]);
   storeLoading = $state(false);
+  componentsCheckedAt = $state(0);
+  componentsChecking = $state(false);
 
   serviceResults = $state<SiteResult[] | null>(null);
   diagnosticsBusy = $state(false);
@@ -185,13 +187,22 @@ class Store {
     await this.installComponent(id, true);
   }
 
-  async checkUpdates() {
-    await this.guard(async () => {
+  async checkUpdates(silent = false) {
+    if (this.componentsChecking) return;
+    this.componentsChecking = true;
+    try {
       await api.checkUpdates();
       await this.refresh();
+      this.componentsCheckedAt = Date.now();
       const updates = this.data?.components.filter((c) => c.update_available) ?? [];
-      this.notify(updates.length ? `Доступны обновления: ${updates.map((u) => u.name).join(", ")}` : "Всё актуально");
-    });
+      if (!silent) {
+        this.notify(updates.length ? `Доступны обновления: ${updates.map((u) => u.name).join(", ")}` : "Всё актуально");
+      }
+    } catch (e) {
+      if (!silent) this.fail(e);
+    } finally {
+      this.componentsChecking = false;
+    }
   }
 
   async checkAppUpdate(silent = false) {

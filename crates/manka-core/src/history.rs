@@ -29,6 +29,8 @@ pub struct HistoryRun {
     pub targets: Vec<String>,
     pub baseline_ok: u32,
     pub baseline_total: u32,
+    #[serde(default)]
+    pub baseline: Vec<SiteResult>,
     pub tested: u32,
     pub results: Vec<SavedResult>,
 }

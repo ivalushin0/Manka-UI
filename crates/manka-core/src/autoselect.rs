@@ -317,6 +317,16 @@ where
     state.current_engine = None;
     progress(&state);
 
+    // Persist successful autoselection results as reusable "auto" presets so
+    // they show up on the Strategies screen with their availability score.
+    let auto_items: Vec<(Engine, String, String, u32)> = state
+        .sorted()
+        .into_iter()
+        .filter(|r| r.percent > 0 && r.start_error.is_none())
+        .map(|r| (r.engine, r.name.clone(), r.template.clone(), r.percent))
+        .collect();
+    let _ = crate::repository::save_auto_results(paths, &auto_items);
+
     // history: keep every tested strategy (including failures) so the UI can
     // show the complete picture of a run.
     let results: Vec<SavedResult> = state
@@ -345,6 +355,7 @@ where
                 targets: request.targets.clone(),
                 baseline_ok: state.baseline.iter().map(|s| s.ok).sum(),
                 baseline_total: state.baseline.iter().map(|s| s.total).sum(),
+                baseline: state.baseline.clone(),
                 tested: state.results.len() as u32,
                 results,
             },
