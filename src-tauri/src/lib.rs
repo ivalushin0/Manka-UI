@@ -1187,6 +1187,7 @@ pub fn run() {
     let paths = Paths::detect();
     let _ = paths.ensure();
     let _ = manka_core::settings::ensure_exclude_list(&paths);
+    let _ = manka_core::settings::ensure_hostlist(&paths);
     let mut settings = Settings::load(&paths);
     if settings.tgws_secret.trim().is_empty() {
         settings.tgws_secret = Settings::default().tgws_secret;

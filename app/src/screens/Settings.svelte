@@ -95,6 +95,14 @@
         />
         Подробные логи компонентов
       </label>
+      <label class="check">
+        <input
+          type="checkbox"
+          checked={settings?.block_quic ?? true}
+          onchange={(e) => store.saveSettings({ block_quic: (e.target as HTMLInputElement).checked })}
+        />
+        Блокировать QUIC (надёжнее для YouTube и AI-сайтов)
+      </label>
     </div>
   </div>
 

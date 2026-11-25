@@ -113,6 +113,12 @@ impl Paths {
         self.lists().join("manka-exclude.txt")
     }
 
+    /// Hosts that are allowed to be desynced (the bypass whitelist/blacklist
+    /// in zapret terms: the list of blocked resources).
+    pub fn hostlist_file(&self) -> PathBuf {
+        self.lists().join("manka-hostlist.txt")
+    }
+
     /// Directory of the installed zapret bundle (works for both engines).
     pub fn engine_dir(&self) -> Option<PathBuf> {
         let info: ComponentCurrent =

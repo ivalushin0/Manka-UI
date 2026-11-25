@@ -219,43 +219,26 @@ impl Settings {
     }
 }
 
-/// Create `lists/manka-exclude.txt` once. Banks, government services, and
-/// Russian CDNs do not need bypass and can break when their TLS is altered.
+/// Create `lists/manka-exclude.txt` once. Banks, government services, Russian
+/// CDNs and AI services do not need bypass and can break when TLS is altered.
+const DEFAULT_EXCLUDE: &str = include_str!("../assets/manka-exclude.txt");
+/// Hosts that should be desynced. The rest of the traffic is left untouched.
+const DEFAULT_HOSTLIST: &str = include_str!("../assets/manka-hostlist.txt");
+
 pub fn ensure_exclude_list(paths: &Paths) -> std::io::Result<()> {
     let file = paths.exclude_list();
     if file.exists() {
         return Ok(());
     }
-    const DEFAULT_EXCLUDE: &str = "\
-gosuslugi.ru
-nalog.gov.ru
-mos.ru
-sberbank.ru
-sber.ru
-tbank.ru
-tinkoff.ru
-vtb.ru
-alfabank.ru
-gazprombank.ru
-raiffeisen.ru
-psbank.ru
-sovcombank.ru
-yandex.ru
-ya.ru
-yandex.net
-yastatic.net
-vk.com
-vk.ru
-userapi.com
-vkuser.net
-mail.ru
-ok.ru
-ozon.ru
-wildberries.ru
-wb.ru
-avito.ru
-rzd.ru
-kinopoisk.ru
-";
     std::fs::write(file, DEFAULT_EXCLUDE)
+}
+
+/// Create `lists/manka-hostlist.txt` once. Contains the resources that are
+/// actually blocked and therefore require the DPI bypass.
+pub fn ensure_hostlist(paths: &Paths) -> std::io::Result<()> {
+    let file = paths.hostlist_file();
+    if file.exists() {
+        return Ok(());
+    }
+    std::fs::write(file, DEFAULT_HOSTLIST)
 }

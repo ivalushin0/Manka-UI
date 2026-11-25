@@ -119,6 +119,79 @@ fn eval_conditions(text: &str, flags: &std::collections::BTreeMap<String, bool>)
         .to_string()
 }
 
+fn has_arg(profile: &[String], prefix: &str) -> bool {
+    profile.iter().any(|a| a.starts_with(prefix))
+}
+
+/// Restrict desync to the blocked-hosts list and, optionally, drop QUIC so
+/// browsers fall back to TCP where the hostlist can be applied.
+fn inject_hostlist(
+    args: Vec<String>,
+    hostlist: &Path,
+    block_quic: bool,
+    engine: Engine,
+) -> Vec<String> {
+    let usable = hostlist.exists()
+        && std::fs::metadata(hostlist).map(|m| m.len() > 0).unwrap_or(false);
+    if !usable && !block_quic {
+        return args;
+    }
+    let hostlist_arg = format!("--hostlist={}", norm_dir(hostlist));
+    let mut out: Vec<String> = Vec::with_capacity(args.len() + 4);
+    let mut profile: Vec<String> = Vec::new();
+
+    let flush = |profile: &mut Vec<String>, out: &mut Vec<String>| {
+        if profile.is_empty() {
+            return;
+        }
+        let is_quic = profile.iter().any(|a| a.starts_with("--filter-l7=quic"));
+        let is_http_tls = profile.iter().any(|a| {
+            a.starts_with("--filter-l7=http")
+                || a.starts_with("--filter-l7=tls")
+                || a == "--payload=http_req"
+                || a.starts_with("--payload=tls_client_hello")
+        });
+        if usable
+            && is_http_tls
+            && !is_quic
+            && !has_arg(profile, "--hostlist=")
+            && !has_arg(profile, "--hostlist-domains=")
+        {
+            let pos = profile
+                .iter()
+                .position(|a| {
+                    a.starts_with("--payload=")
+                        || a.starts_with("--lua-desync=")
+                        || a.starts_with("--dpi-desync=")
+                })
+                .unwrap_or(profile.len());
+            profile.insert(pos, hostlist_arg.clone());
+        }
+        if block_quic && is_quic {
+            profile.retain(|a| {
+                !a.starts_with("--lua-desync=") && !a.starts_with("--dpi-desync=")
+            });
+            profile.push(if engine == Engine::Zapret2 {
+                "--lua-desync=drop".into()
+            } else {
+                "--dpi-desync=drop".into()
+            });
+        }
+        out.append(profile);
+    };
+
+    for arg in args {
+        if arg == "--new" {
+            flush(&mut profile, &mut out);
+            out.push(arg);
+        } else {
+            profile.push(arg);
+        }
+    }
+    flush(&mut profile, &mut out);
+    out
+}
+
 /// Substitute variables, options and conditions, then split into argv.
 pub fn render(
     strategy: &Strategy,
@@ -242,6 +315,12 @@ pub fn render(
     }
 
     // drop empty profiles and stray --new
+    let args = inject_hostlist(
+        args,
+        &paths.hostlist_file(),
+        settings.block_quic,
+        strategy.engine,
+    );
     let mut cleaned: Vec<String> = Vec::with_capacity(args.len());
     for a in args {
         if a == "--new" && (cleaned.is_empty() || cleaned.last().map(|x| x == "--new").unwrap_or(false)) {
