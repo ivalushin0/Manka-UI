@@ -44,7 +44,8 @@ pub async fn check_sites(
                     url.clone()
                 } else {
                     format!("https://{url}")
-                };                let mut ok = 0u32;
+                };
+                let mut ok = 0u32;
                 let mut total_ms = 0u64;
                 let mut last_error = None;
                 let mut last_status = None;
@@ -121,8 +122,16 @@ pub fn score(results: &[SiteResult]) -> (u32, u64) {
     let ok: u32 = results.iter().map(|r| r.ok).sum();
     let total: u32 = results.iter().map(|r| r.total).sum();
     let percent = ok.saturating_mul(100).checked_div(total).unwrap_or(0);
-    let ms: Vec<u64> = results.iter().filter(|r| r.ok > 0).map(|r| r.avg_ms).collect();
-    let avg = if ms.is_empty() { 0 } else { ms.iter().sum::<u64>() / ms.len() as u64 };
+    let ms: Vec<u64> = results
+        .iter()
+        .filter(|r| r.ok > 0)
+        .map(|r| r.avg_ms)
+        .collect();
+    let avg = if ms.is_empty() {
+        0
+    } else {
+        ms.iter().sum::<u64>() / ms.len() as u64
+    };
     (percent, avg)
 }
 

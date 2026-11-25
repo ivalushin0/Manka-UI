@@ -11,7 +11,6 @@ pub enum Engine {
     Byedpi,
 }
 
-
 impl Engine {
     pub fn id(self) -> &'static str {
         match self {
@@ -129,7 +128,12 @@ pub struct Strategy {
 }
 
 impl Strategy {
-    pub fn new(id: impl Into<String>, engine: Engine, name: impl Into<String>, template: impl Into<String>) -> Self {
+    pub fn new(
+        id: impl Into<String>,
+        engine: Engine,
+        name: impl Into<String>,
+        template: impl Into<String>,
+    ) -> Self {
         Self {
             id: id.into(),
             engine,

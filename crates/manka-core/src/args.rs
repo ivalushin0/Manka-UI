@@ -1,4 +1,4 @@
-﻿use std::path::{Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use regex::Regex;
 
@@ -69,7 +69,11 @@ pub fn ports(value: &str) -> String {
         let valid = item
             .chars()
             .all(|c| c.is_ascii_digit() || c == '-' || c == ':')
-            && item.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false);
+            && item
+                .chars()
+                .next()
+                .map(|c| c.is_ascii_digit())
+                .unwrap_or(false);
         if valid && !out.iter().any(|p| p == item) {
             let mut p = item.replace(':', "-");
             while p.contains("--") {
@@ -124,19 +128,24 @@ fn has_arg(profile: &[String], prefix: &str) -> bool {
 }
 
 /// Restrict desync to the blocked-hosts list and, optionally, drop QUIC so
-/// browsers fall back to TCP where the hostlist can be applied.
+/// browsers fall back to TCP where the hostlist can be applied. When
+/// `hostlist` is None (bypass scope "all") the desync applies to everything
+/// and only the QUIC drop is left.
 fn inject_hostlist(
     args: Vec<String>,
-    hostlist: &Path,
+    hostlist: Option<&Path>,
     block_quic: bool,
     engine: Engine,
 ) -> Vec<String> {
-    let usable = hostlist.exists()
-        && std::fs::metadata(hostlist).map(|m| m.len() > 0).unwrap_or(false);
+    let usable = hostlist
+        .map(|p| p.exists() && std::fs::metadata(p).map(|m| m.len() > 0).unwrap_or(false))
+        .unwrap_or(false);
     if !usable && !block_quic {
         return args;
     }
-    let hostlist_arg = format!("--hostlist={}", norm_dir(hostlist));
+    let hostlist_arg = hostlist
+        .map(|p| format!("--hostlist={}", norm_dir(p)))
+        .unwrap_or_default();
     let mut out: Vec<String> = Vec::with_capacity(args.len() + 4);
     let mut profile: Vec<String> = Vec::new();
 
@@ -168,9 +177,7 @@ fn inject_hostlist(
             profile.insert(pos, hostlist_arg.clone());
         }
         if block_quic && is_quic {
-            profile.retain(|a| {
-                !a.starts_with("--lua-desync=") && !a.starts_with("--dpi-desync=")
-            });
+            profile.retain(|a| !a.starts_with("--lua-desync=") && !a.starts_with("--dpi-desync="));
             profile.push(if engine == Engine::Zapret2 {
                 "--lua-desync=drop".into()
             } else {
@@ -203,7 +210,10 @@ pub fn render(
     // flags: saved value or the kit default
     let mut flags = std::collections::BTreeMap::new();
     for f in &strategy.flags {
-        flags.insert(f.key.clone(), settings.flag(&strategy.id, &f.key, f.default));
+        flags.insert(
+            f.key.clone(),
+            settings.flag(&strategy.id, &f.key, f.default),
+        );
     }
 
     // values: %NAME%=... definitions; values themselves may contain conditions
@@ -236,7 +246,9 @@ pub fn render(
         line = next;
     }
 
-    let kit = kit_dir.map(norm_dir).unwrap_or_else(|| norm_dir(&paths.kits()));
+    let kit = kit_dir
+        .map(norm_dir)
+        .unwrap_or_else(|| norm_dir(&paths.kits()));
     let engine = engine_dir.map(norm_dir).unwrap_or_default();
     let engine_path = if engine.is_empty() {
         paths.engine_dir().map(|p| norm_dir(&p)).unwrap_or_default()
@@ -257,7 +269,9 @@ pub fn render(
         .replace("$EMPTY", "");
 
     let mut args = split(&line);
-    args.retain(|a| !a.is_empty() && !a.starts_with("--ssid-filter") && !a.starts_with("--nlm-filter"));
+    args.retain(|a| {
+        !a.is_empty() && !a.starts_with("--ssid-filter") && !a.starts_with("--nlm-filter")
+    });
 
     // winws2 needs its Lua library; add it when a preset does not bring its own.
     if strategy.engine == Engine::Zapret2
@@ -288,12 +302,16 @@ pub fn render(
 
     // WinDivert filter is mandatory for winws: add a default one when the
     // preset only has --filter-tcp/--filter-udp blocks.
-    let has_tcp_wf = args
-        .iter()
-        .any(|a| a.starts_with("--wf-tcp=") || a.starts_with("--wf-tcp-out=") || a.starts_with("--wf-tcp-in="));
-    let has_udp_wf = args
-        .iter()
-        .any(|a| a.starts_with("--wf-udp=") || a.starts_with("--wf-udp-out=") || a.starts_with("--wf-udp-in="));
+    let has_tcp_wf = args.iter().any(|a| {
+        a.starts_with("--wf-tcp=")
+            || a.starts_with("--wf-tcp-out=")
+            || a.starts_with("--wf-tcp-in=")
+    });
+    let has_udp_wf = args.iter().any(|a| {
+        a.starts_with("--wf-udp=")
+            || a.starts_with("--wf-udp-out=")
+            || a.starts_with("--wf-udp-in=")
+    });
     let (tcp_key, udp_key) = if strategy.engine == Engine::Zapret2 {
         ("--wf-tcp-out", "--wf-udp-out")
     } else {
@@ -309,21 +327,34 @@ pub fn render(
         args.insert(0, format!("{tcp_key}={tcp}"));
     }
     if !has_udp_wf {
-        if let Some(udp) = strategy.udp_ports.as_deref().map(ports).filter(|p| !p.is_empty()) {
+        if let Some(udp) = strategy
+            .udp_ports
+            .as_deref()
+            .map(ports)
+            .filter(|p| !p.is_empty())
+        {
             args.insert(0, format!("{udp_key}={udp}"));
         }
     }
 
-    // drop empty profiles and stray --new
+    // drop empty profiles and stray --new; bypass scope "all" applies desync
+    // to the whole TLS/HTTP traffic without a hostlist
+    let hostlist = if settings.bypass_scope == "all" {
+        None
+    } else {
+        Some(crate::lists::effective_hostlist(paths))
+    };
     let args = inject_hostlist(
         args,
-        &paths.hostlist_file(),
+        hostlist.as_deref(),
         settings.block_quic,
         strategy.engine,
     );
     let mut cleaned: Vec<String> = Vec::with_capacity(args.len());
     for a in args {
-        if a == "--new" && (cleaned.is_empty() || cleaned.last().map(|x| x == "--new").unwrap_or(false)) {
+        if a == "--new"
+            && (cleaned.is_empty() || cleaned.last().map(|x| x == "--new").unwrap_or(false))
+        {
             continue;
         }
         cleaned.push(a);
@@ -397,6 +428,7 @@ pub fn tgws_link(settings: &Settings) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{Engine, StrategyFlag, StrategyOption};
 
     #[test]
     fn splits_quotes() {
@@ -411,5 +443,206 @@ mod tests {
         assert_eq!(ports("80, 443,50000-50100"), "80,443,50000-50100");
         assert_eq!(ports("a,80::90"), "80-90");
     }
-}
 
+    #[test]
+    fn join_quotes_whitespace() {
+        let joined = join(&["--a".to_string(), "b c".to_string()]);
+        assert_eq!(joined, "--a \"b c\"");
+    }
+
+    /// A tempdir with a non-empty hostlist, so `inject_hostlist` is active.
+    fn fixture() -> (tempfile::TempDir, Paths) {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        std::fs::create_dir_all(paths.lists()).unwrap();
+        std::fs::write(paths.hostlist_file(), "youtube.com\n").unwrap();
+        (dir, paths)
+    }
+
+    #[test]
+    fn render_substitutes_variables_and_sni() {
+        let (_dir, paths) = fixture();
+        let mut s = Strategy::new(
+            "t1",
+            Engine::Zapret,
+            "t",
+            "--wf-tcp=%PORTS% --filter-tcp=443 --hostlist=$LISTS/x.txt --fake-sni={sni} --payload=%PAYLOAD%",
+        );
+        s.variables.insert("PORTS".into(), "443".into());
+        s.options.push(StrategyOption {
+            variable: "PAYLOAD".into(),
+            title: "p".into(),
+            default_value: "tls_client_hello".into(),
+            values: vec!["tls_client_hello".into(), "http_req".into()],
+        });
+        let settings = Settings::default();
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(r.args.iter().any(|a| a == "--wf-tcp=443"));
+        assert!(r.args.iter().any(|a| a == "--fake-sni=www.google.com"));
+        assert!(r.args.iter().any(|a| a == "--payload=tls_client_hello"));
+        // no unresolved placeholders left
+        assert!(!r.args.iter().any(|a| a.contains('%') && a.contains("%")));
+    }
+
+    #[test]
+    fn render_evaluates_conditions_with_flags() {
+        let (_dir, paths) = fixture();
+        let mut s = Strategy::new(
+            "t2",
+            Engine::Zapret,
+            "t",
+            "$LOCALCONDITION(game==true ? --game-on : --game-off) --wf-tcp=443",
+        );
+        s.flags.push(StrategyFlag {
+            key: "game".into(),
+            title: "g".into(),
+            default: false,
+        });
+        let mut settings = Settings::default();
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(r.args.iter().any(|a| a == "--game-off"));
+        settings.set_flag("t2", "game", true);
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(r.args.iter().any(|a| a == "--game-on"));
+    }
+
+    #[test]
+    fn render_injects_hostlist_into_tls_profiles_only() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new(
+            "t3",
+            Engine::Zapret,
+            "t",
+            "--wf-tcp=80,443 --filter-tcp=443 --hostlist=own.txt --payload=tls_client_hello --dpi-desync=fake --new \
+             --filter-tcp=443 --payload=tls_client_hello --dpi-desync=fake --new --filter-udp=443 --dpi-desync=fake",
+        );
+        let settings = Settings {
+            block_quic: false,
+            ..Default::default()
+        };
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        let hostlist = format!(
+            "--hostlist={}",
+            paths.hostlist_file().to_string_lossy().replace('\\', "/")
+        );
+        // profile 1 already has its own hostlist: untouched
+        assert!(r.args.iter().any(|a| a == "--hostlist=own.txt"));
+        // profile 2 (TLS, no hostlist) got the injected one
+        assert!(r.args.contains(&hostlist));
+        // profile 3 is UDP: no injection there
+        let udp_pos = r.args.iter().position(|a| a == "--filter-udp=443").unwrap();
+        assert!(!r.args[udp_pos..].contains(&hostlist));
+    }
+
+    #[test]
+    fn render_drops_quic_when_requested() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new(
+            "t4",
+            Engine::Zapret2,
+            "t",
+            "--wf-udp=443 --filter-l7=quic --lua-desync=fake",
+        );
+        let settings = Settings::default(); // block_quic = true
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(r.args.iter().any(|a| a == "--lua-desync=drop"));
+        assert!(!r.args.iter().any(|a| a == "--lua-desync=fake"));
+    }
+
+    #[test]
+    fn render_converts_wf_filters_for_zapret2() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new(
+            "t5",
+            Engine::Zapret2,
+            "t",
+            "--wf-tcp=80,443 --wf-udp=443 --filter-tcp=443 --lua-desync=fake",
+        );
+        let settings = Settings::default();
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(r.args.iter().any(|a| a == "--wf-tcp-out=80,443"));
+        assert!(r.args.iter().any(|a| a == "--wf-udp-out=443"));
+        assert!(!r.args.iter().any(|a| a.starts_with("--wf-tcp=")));
+        assert!(!r.args.iter().any(|a| a.starts_with("--wf-udp=")));
+    }
+
+    #[test]
+    fn render_adds_default_wf_when_missing() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new(
+            "t6",
+            Engine::Zapret,
+            "t",
+            "--filter-tcp=443 --dpi-desync=fake",
+        );
+        let settings = Settings::default();
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert_eq!(r.args.first().map(|s| s.as_str()), Some("--wf-tcp=80,443"));
+    }
+
+    #[test]
+    fn render_never_leaves_dangling_new() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new("t7", Engine::Zapret, "t", "--new --new --wf-tcp=443 --new");
+        let settings = Settings::default();
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert_ne!(r.args.last().map(|s| s.as_str()), Some("--new"));
+        assert!(!r
+            .args
+            .windows(2)
+            .any(|w| w[0] == "--new" && w[1] == "--new"));
+    }
+
+    #[test]
+    fn render_strips_ssid_filters() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new(
+            "t8",
+            Engine::Zapret,
+            "t",
+            "--wf-tcp=443 --ssid-filter=home --nlm-filter=any --dpi-desync=fake",
+        );
+        let settings = Settings::default();
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(!r.args.iter().any(|a| a.starts_with("--ssid-filter")));
+        assert!(!r.args.iter().any(|a| a.starts_with("--nlm-filter")));
+    }
+
+    #[test]
+    fn render_scope_all_skips_hostlist() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new(
+            "t9",
+            Engine::Zapret,
+            "t",
+            "--wf-tcp=443 --filter-tcp=443 --payload=tls_client_hello --dpi-desync=fake",
+        );
+        let settings = Settings {
+            bypass_scope: "all".into(),
+            block_quic: false,
+            ..Default::default()
+        };
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(
+            !r.args.iter().any(|a| a.starts_with("--hostlist=")),
+            "scope=all must not inject a hostlist: {:?}",
+            r.args
+        );
+    }
+
+    #[test]
+    fn tgws_args_are_stable() {
+        let settings = Settings::default();
+        let args = tgws_args(&settings);
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "--host" && w[1] == "127.0.0.1"));
+        assert!(args
+            .windows(2)
+            .any(|w| w[0] == "--secret" && w[1] == settings.tgws_secret));
+        assert!(args.iter().any(|a| a == "--default-domains"));
+        assert!(args.iter().any(|a| a == "-q"));
+        let link = tgws_link(&settings);
+        assert!(link.starts_with("tg://proxy?server=127.0.0.1&port=1443&secret=dd"));
+    }
+}

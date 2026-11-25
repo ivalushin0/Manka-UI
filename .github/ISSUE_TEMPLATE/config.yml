@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Вопрос / обсуждение
+    url: https://github.com/ivalushin0/Manka-UI/discussions
+    about: Общие вопросы, помощь с настройкой, обмен стратегиями — сюда.
+  - name: Проблема с движком Zapret
+    url: https://github.com/bol-van/zapret-win-bundle/discussions
+    about: Вопросы по самому механизму обхода DPI (не по приложению Manka).

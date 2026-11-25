@@ -12,34 +12,13 @@ use regex::Regex;
 use serde_json::{json, Value};
 
 use crate::args;
-use crate::components::{download, extract_zip, ProgressFn};
+use crate::components::extract_zip;
+use crate::http::{download, get_json, ProgressFn};
 use crate::model::{Engine, Source, StoreItem, Strategy, StrategyFlag, StrategyOption};
 use crate::paths::Paths;
-use crate::util::{hash_id, read_json, write_json};
+use crate::util::{hash_id, read_json, verify_sha256, write_json};
 
 const STORE_ZIP: &str = "https://codeload.github.com/Storik4pro/CDPIUI-Store/zip/refs/heads/main";
-const USER_AGENT: &str = "Manka-UI/0.1 (Windows)";
-
-fn client() -> reqwest::Client {
-    reqwest::Client::builder()
-        .user_agent(USER_AGENT)
-        .timeout(std::time::Duration::from_secs(120))
-        .build()
-        .expect("http client")
-}
-
-async fn get_json(url: &str) -> Result<Value, String> {
-    let resp = client()
-        .get(url)
-        .header("Accept", "application/vnd.github+json")
-        .send()
-        .await
-        .map_err(|e| format!("{url}: {e}"))?;
-    if !resp.status().is_success() {
-        return Err(format!("{url}: HTTP {}", resp.status()));
-    }
-    resp.json().await.map_err(|e| format!("{url}: {e}"))
-}
 
 fn read_index(paths: &Paths, path: &str) -> Option<String> {
     let clean = path.trim().trim_start_matches('/');
@@ -80,7 +59,14 @@ pub async fn refresh_index(paths: &Paths, progress: ProgressFn<'_>) -> Result<()
     let temp = paths.temp();
     fs::create_dir_all(&temp).map_err(|e| e.to_string())?;
     let zip_path = temp.join("cdpi-store.zip");
-    download(STORE_ZIP, &zip_path, progress, "store", "Обновление магазина").await?;
+    download(
+        STORE_ZIP,
+        &zip_path,
+        progress,
+        "store",
+        "Обновление магазина",
+    )
+    .await?;
 
     let unpack = temp.join("cdpi-store");
     if unpack.exists() {
@@ -117,18 +103,26 @@ pub fn items(paths: &Paths) -> Vec<StoreItem> {
 
     let mut out = Vec::new();
     for (category, dir_val) in dirs {
-        let Some(dir) = dir_val.as_str() else { continue };
+        let Some(dir) = dir_val.as_str() else {
+            continue;
+        };
         let Some(cat_text) = read_index(paths, &format!("{dir}/init.json")) else {
             continue;
         };
-        let Some(cat) = json_of(&cat_text) else { continue };
+        let Some(cat) = json_of(&cat_text) else {
+            continue;
+        };
         let Some(item_dirs) = cat.get("items_directories").and_then(|v| v.as_object()) else {
             continue;
         };
         let order: Vec<String> = cat
             .get("items")
             .and_then(|v| v.as_array())
-            .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+            .map(|a| {
+                a.iter()
+                    .filter_map(|x| x.as_str().map(str::to_string))
+                    .collect()
+            })
             .unwrap_or_else(|| item_dirs.keys().cloned().collect());
 
         for key in order {
@@ -195,7 +189,11 @@ fn installed_kits(paths: &Paths) -> BTreeMap<String, String> {
         }
         let meta = entry.path().join("manka-kit.json");
         if let Some(v) = read_json::<Value>(&meta) {
-            let version = v.get("version").and_then(|x| x.as_str()).unwrap_or("").to_string();
+            let version = v
+                .get("version")
+                .and_then(|x| x.as_str())
+                .unwrap_or("")
+                .to_string();
             out.insert(entry.file_name().to_string_lossy().to_string(), version);
         }
     }
@@ -222,6 +220,8 @@ pub struct Release {
     pub tag: String,
     pub url: String,
     pub name: String,
+    /// SHA256 digest of the asset as published by GitHub.
+    pub digest: Option<String>,
 }
 
 fn repo_of(link: &str) -> String {
@@ -236,11 +236,20 @@ pub async fn latest_release(item: &StoreItem) -> Result<Release, String> {
         return Ok(Release {
             tag: "latest".into(),
             url: item.link.clone(),
-            name: item.link.rsplit('/').next().unwrap_or("list.txt").to_string(),
+            name: item
+                .link
+                .rsplit('/')
+                .next()
+                .unwrap_or("list.txt")
+                .to_string(),
+            digest: None,
         });
     }
     let repo = repo_of(&item.link);
-    let json = get_json(&format!("https://api.github.com/repos/{repo}/releases/latest")).await?;
+    let json = get_json(&format!(
+        "https://api.github.com/repos/{repo}/releases/latest"
+    ))
+    .await?;
     let tag = json
         .get("tag_name")
         .and_then(|v| v.as_str())
@@ -251,31 +260,41 @@ pub async fn latest_release(item: &StoreItem) -> Result<Release, String> {
         .get("assets")
         .and_then(|v| v.as_array())
         .unwrap_or(&empty);
-    let mut choices: Vec<(String, String)> = assets
+    let mut choices: Vec<(String, String, Option<String>)> = assets
         .iter()
         .filter_map(|a| {
             Some((
                 a.get("name")?.as_str()?.to_string(),
                 a.get("browser_download_url")?.as_str()?.to_string(),
+                a.get("digest").and_then(|d| d.as_str()).map(str::to_string),
             ))
         })
         .collect();
     if let Some(pref) = &item.preferred_file {
-        choices.sort_by_key(|(name, _)| !(name == pref || name.starts_with(pref)));
+        assets_ensure_preferred(&mut choices, pref);
     }
     let pick = choices
         .iter()
-        .find(|(name, _)| name.ends_with(".zip"))
+        .find(|(name, _, _)| name.ends_with(".zip"))
         .or_else(|| choices.first())
         .ok_or_else(|| format!("В релизе {repo} {tag} нет файлов"))?;
     Ok(Release {
         tag,
         url: pick.1.clone(),
         name: pick.0.clone(),
+        digest: pick.2.clone(),
     })
 }
 
-pub async fn install_item(paths: &Paths, store_id: &str, progress: ProgressFn<'_>) -> Result<String, String> {
+fn assets_ensure_preferred(choices: &mut [(String, String, Option<String>)], preferred: &str) {
+    choices.sort_by_key(|(name, _, _)| !(name == preferred || name.starts_with(preferred)));
+}
+
+pub async fn install_item(
+    paths: &Paths,
+    store_id: &str,
+    progress: ProgressFn<'_>,
+) -> Result<String, String> {
     let item = items(paths)
         .into_iter()
         .find(|i| i.store_id == store_id)
@@ -297,6 +316,14 @@ pub async fn install_item(paths: &Paths, store_id: &str, progress: ProgressFn<'_
         .unwrap_or("bin");
     let file = temp.join(format!("kit-{store_id}.{ext}"));
     download(&release.url, &file, progress, store_id, "Скачивание набора").await?;
+    // Kit archives contain Lua that winws runs with administrator rights, so
+    // verify them against the digest GitHub published for the asset.
+    if let Some(digest) = &release.digest {
+        verify_sha256(&file, digest)?;
+    } else if ext.eq_ignore_ascii_case("zip") {
+        let _ = fs::remove_file(&file);
+        return Err("GitHub не вернул SHA256 для архива набора — установка отменена".into());
+    }
 
     if item.kind == "lsubscription" {
         fs::create_dir_all(paths.lists()).map_err(|e| e.to_string())?;
@@ -336,8 +363,26 @@ pub async fn install_item(paths: &Paths, store_id: &str, progress: ProgressFn<'_
     Ok(release.tag)
 }
 
+/// Store ids look like `CSZTR1003` / `ASGKOI001`: short ASCII alphanumerics.
+/// Anything else (path separators, dots, unicode) is rejected before it can
+/// reach the file system — this runs with administrator rights.
+pub fn valid_store_id(store_id: &str) -> bool {
+    (4..=32).contains(&store_id.len())
+        && store_id
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
 pub fn remove_kit(paths: &Paths, store_id: &str) -> Result<(), String> {
+    if !valid_store_id(store_id) {
+        return Err(format!("Некорректный идентификатор набора: {store_id:?}"));
+    }
+    let kits_root = paths.kits();
     let dir = paths.kit(store_id);
+    // defense in depth: the resolved path must stay inside the kits folder
+    if !dir.starts_with(&kits_root) {
+        return Err("Некорректный путь набора".into());
+    }
     if dir.exists() {
         fs::remove_dir_all(dir).map_err(|e| e.to_string())?;
     }
@@ -355,7 +400,9 @@ fn load_strings(kit: &Path) -> (BTreeMap<String, String>, String) {
     let Some(init) = read_json::<Value>(&kit.join("init.json")) else {
         return (strings, "RU".into());
     };
-    let dirs = init.get("localized_strings_directory").and_then(|v| v.as_object());
+    let dirs = init
+        .get("localized_strings_directory")
+        .and_then(|v| v.as_object());
     let code = dirs
         .and_then(|d| d.get("RU").and_then(|v| v.as_str()).map(|_| "RU"))
         .unwrap_or("EN");
@@ -437,11 +484,17 @@ fn parse_kit(kit: &Path, kit_id: &str, kit_name: &str) -> Vec<Strategy> {
                 && p.file_name().and_then(|n| n.to_str()) != Some("manka-kit.json")
         })
         .collect();
-    files.sort_by_key(|p| p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default());
+    files.sort_by_key(|p| {
+        p.file_name()
+            .map(|n| n.to_string_lossy().to_lowercase())
+            .unwrap_or_default()
+    });
 
     let mut out = Vec::new();
     for file in files {
-        let Some(obj) = read_json::<Value>(&file) else { continue };
+        let Some(obj) = read_json::<Value>(&file) else {
+            continue;
+        };
         let meta = str_field(&obj, "meta");
         if !meta.starts_with("IC:") && !meta.starts_with("UC:") {
             continue;
@@ -491,7 +544,10 @@ fn parse_kit(kit: &Path, kit_id: &str, kit_name: &str) -> Vec<Strategy> {
         }
 
         let mut options = Vec::new();
-        if let Some(arr) = obj.get("availableCommaVarsValues").and_then(|v| v.as_array()) {
+        if let Some(arr) = obj
+            .get("availableCommaVarsValues")
+            .and_then(|v| v.as_array())
+        {
             for entry in arr {
                 let Some(variable) = entry.get("VarName").and_then(|v| v.as_str()) else {
                     continue;
@@ -499,13 +555,20 @@ fn parse_kit(kit: &Path, kit_id: &str, kit_name: &str) -> Vec<Strategy> {
                 let values: Vec<String> = entry
                     .get("Values")
                     .and_then(|v| v.as_array())
-                    .map(|a| a.iter().filter_map(|x| x.as_str().map(str::to_string)).collect())
+                    .map(|a| {
+                        a.iter()
+                            .filter_map(|x| x.as_str().map(str::to_string))
+                            .collect()
+                    })
                     .unwrap_or_default();
                 if values.is_empty() {
                     continue;
                 }
                 let title = localize(
-                    entry.get("Comment").and_then(|v| v.as_str()).unwrap_or(variable),
+                    entry
+                        .get("Comment")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or(variable),
                     &strings,
                 );
                 let default = variables
@@ -591,7 +654,10 @@ pub fn installed_presets(paths: &Paths) -> Vec<Strategy> {
     dirs.sort();
     let mut out = Vec::new();
     for dir in dirs {
-        let kit_id = dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+        let kit_id = dir
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
         let name = kit_name(paths, &kit_id).unwrap_or_else(|| kit_id.clone());
         out.extend(parse_kit(&dir, &kit_id, &name));
     }
@@ -608,19 +674,6 @@ pub fn installed_kits_list(paths: &Paths) -> Vec<(String, String, String)> {
         .collect()
 }
 
-/// A store item's release archive can contain a `Bin`/`List` folder used by
-/// `$GETCURRENTDIR()`; make sure the kit has the classic folders before use.
-pub fn ensure_kit_layout(paths: &Paths, kit_id: &str) -> std::io::Result<()> {
-    let dir = paths.kit(kit_id);
-    for sub in ["Bin", "List", "bin", "list"] {
-        let p = dir.join(sub);
-        if !p.exists() && sub == "Bin" {
-            let _ = std::fs::create_dir_all(&p);
-        }
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -630,5 +683,32 @@ mod tests {
         let mut map = BTreeMap::new();
         map.insert("x".to_string(), "Привет".to_string());
         assert_eq!(localize("$LOADSTRING(x) мир", &map), "Привет мир");
+    }
+
+    #[test]
+    fn store_id_validation_blocks_traversal() {
+        assert!(valid_store_id("CSZTR1003"));
+        assert!(valid_store_id("ASGKOI001"));
+        assert!(!valid_store_id(""));
+        assert!(!valid_store_id(".."));
+        assert!(!valid_store_id("../.."));
+        assert!(!valid_store_id("a/b"));
+        assert!(!valid_store_id("a\\b"));
+        assert!(!valid_store_id("C:"));
+        assert!(!valid_store_id("набор"));
+        assert!(!valid_store_id("x".repeat(64).as_str()));
+    }
+
+    #[test]
+    fn remove_kit_rejects_traversal() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        let outside = dir.path().join("victim");
+        std::fs::create_dir_all(&outside).unwrap();
+        assert!(remove_kit(&paths, "..").is_err());
+        assert!(remove_kit(&paths, "../victim").is_err());
+        assert!(outside.exists());
+        // a normal id works even when nothing is installed
+        assert!(remove_kit(&paths, "CSZTR1003").is_ok());
     }
 }

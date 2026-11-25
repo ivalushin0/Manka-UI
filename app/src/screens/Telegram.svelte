@@ -4,6 +4,7 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { copyText, fmtUptime } from "../lib/utils";
+  import { t } from "../lib/i18n.svelte";
 
   const settings = $derived(store.settings);
   const running = $derived(store.data?.proxy.running ?? false);
@@ -30,7 +31,7 @@
 
   async function copy(text: string, message: string) {
     if (await copyText(text)) store.notify(message);
-    else store.fail("Не удалось скопировать");
+    else store.fail(t("common.copyFailed"));
   }
 
   async function open() {
@@ -46,19 +47,19 @@
   <div class="page-head">
     <div>
       <div class="page-title">Telegram</div>
-      <div class="page-sub">Локальный MTProto-прокси через WebSocket (tg-ws-proxy-rs)</div>
+      <div class="page-sub">{t("telegram.subtitle")}</div>
     </div>
     <span class="badge" class:ok={running} class:muted={!running}>
-      {running ? `работает · ${fmtUptime(store.data?.proxy.uptime_sec ?? 0)}` : "остановлен"}
+      {running ? `${t("common.running")} · ${fmtUptime(store.data?.proxy.uptime_sec ?? 0)}` : t("telegram.stopped")}
     </span>
   </div>
 
   {#if !installed}
     <div class="banner">
       <Icon name="download" size={20} />
-      <span class="grow">Прокси-компонент не установлен.</span>
+      <span class="grow">{t("telegram.notInstalled")}</span>
       <button class="btn small primary" onclick={() => store.installComponent("tgws")} disabled={store.busy}>
-        Установить
+        {t("common.install")}
       </button>
     </div>
   {/if}
@@ -67,61 +68,61 @@
     <div class="banner bad">
       <Icon name="bolt" size={20} />
       <span class="grow">
-        Порт {settings?.tgws_port} занят: <b>{store.portOwner.name}</b> (PID {store.portOwner.pid}).
+        {t("telegram.portBusy", { port: settings?.tgws_port ?? "" })} <b>{store.portOwner.name}</b> (PID {store.portOwner.pid}).
         {#if store.isKnownProxy(store.portOwner.name)}
-          Это другой Telegram-прокси — можно остановить его и запустить Manka-прокси на том же порту.
+          {t("telegram.portBusyKnown")}
         {:else}
-          Освободите порт или выберите другой.
+          {t("telegram.portBusyFree")}
         {/if}
       </span>
       {#if store.isKnownProxy(store.portOwner.name)}
-        <button class="btn small danger" onclick={() => (confirmAction = "take")} disabled={store.busy}>Остановить и запустить</button>
+        <button class="btn small danger" onclick={() => (confirmAction = "take")} disabled={store.busy}>{t("telegram.takePort")}</button>
       {/if}
     </div>
   {/if}
 
   <div class="card">
-    <div class="card-title"><Icon name="send" size={18} /> Подключение</div>
+    <div class="card-title"><Icon name="send" size={18} /> {t("telegram.connection")}</div>
     <div class="row">
       <button class="btn" class:primary={!running} class:danger={running} onclick={() => store.toggleProxy()} disabled={store.busy || !installed}>
-        <Icon name={running ? "stop" : "play"} size={15} /> {running ? "Остановить прокси" : "Запустить прокси"}
+        <Icon name={running ? "stop" : "play"} size={15} /> {running ? t("telegram.stopProxy") : t("telegram.startProxy")}
       </button>
       <button class="btn" onclick={() => store.checkProxy()} disabled={store.tgwsChecking}>
-        <Icon name="bolt" size={15} /> {store.tgwsChecking ? "Проверяю…" : "Проверить"}
+        <Icon name="bolt" size={15} /> {store.tgwsChecking ? t("common.checking") : t("common.check")}
       </button>
-      <button class="btn" onclick={open}><Icon name="external" size={15} /> Открыть в Telegram</button>
+      <button class="btn" onclick={open}><Icon name="external" size={15} /> {t("telegram.openInTelegram")}</button>
     </div>
 
     <hr class="sep" style="margin:16px 0" />
 
     <div class="kv">
-      <span class="k">Сервер</span><span class="mono">127.0.0.1</span>
-      <span class="k">Порт</span><span class="mono">{settings?.tgws_port}</span>
-      <span class="k">Секрет</span>
+      <span class="k">{t("telegram.server")}</span><span class="mono">127.0.0.1</span>
+      <span class="k">{t("telegram.port")}</span><span class="mono">{settings?.tgws_port}</span>
+      <span class="k">{t("telegram.secret")}</span>
       <span class="row">
         <span class="mono wrap grow">{showSecret ? settings?.tgws_secret : "••••••••••••••••••••••••••••••••"}</span>
-        <button class="btn small ghost" onclick={() => (showSecret = !showSecret)}>{showSecret ? "Скрыть" : "Показать"}</button>
-        <button class="btn small ghost" onclick={() => copy(settings?.tgws_secret ?? "", "Секрет скопирован")}>
+        <button class="btn small ghost" onclick={() => (showSecret = !showSecret)}>{showSecret ? t("common.hide") : t("common.show")}</button>
+        <button class="btn small ghost" onclick={() => copy(settings?.tgws_secret ?? "", t("telegram.secretCopied"))}>
           <Icon name="copy" size={14} />
         </button>
         <button
           class="btn small danger"
           onclick={() => (confirmAction = "regen")}
         >
-          Новый
+          {t("telegram.newSecret")}
         </button>
       </span>
-      <span class="k">Ссылка</span>
+      <span class="k">{t("telegram.link")}</span>
       <span class="row">
         <span class="mono wrap grow">{link}</span>
-        <button class="btn small ghost" onclick={() => copy(link, "Ссылка скопирована")}><Icon name="copy" size={14} /></button>
+        <button class="btn small ghost" onclick={() => copy(link, t("common.linkCopied"))}><Icon name="copy" size={14} /></button>
       </span>
     </div>
 
     {#if store.tgwsCheck}
       <div class="banner" class:bad={!store.tgwsCheck.ok} style="margin-top:14px;display:block">
         <div class="row" style="margin-bottom:6px">
-          <b>{store.tgwsCheck.ok ? "Проверка пройдена" : "Проверка не прошла"}</b>
+          <b>{store.tgwsCheck.ok ? t("telegram.checkOk") : t("telegram.checkFailed")}</b>
         </div>
         {#if store.tgwsCheck.output}
           <pre class="mono wrap" style="margin:6px 0 0;max-height:180px;overflow:auto">{store.tgwsCheck.output}</pre>
@@ -131,10 +132,10 @@
   </div>
 
   <div class="card">
-    <div class="card-title"><Icon name="sliders" size={17} /> Настройки прокси</div>
+    <div class="card-title"><Icon name="sliders" size={17} /> {t("telegram.settings")}</div>
     <div class="grid-2">
       <label class="field">
-        Порт прослушивания
+        {t("telegram.listenPort")}
         <input
           id="tgws-port"
           type="number"
@@ -145,7 +146,7 @@
         />
       </label>
       <label class="field">
-        Размер пула соединений
+        {t("telegram.poolSize")}
         <input
           type="number"
           min="1"
@@ -162,11 +163,11 @@
         checked={settings?.tgws_cloudflare ?? true}
         onchange={(e) => store.saveSettings({ tgws_cloudflare: (e.target as HTMLInputElement).checked })}
       />
-      Использовать публичные Cloudflare-домены (--default-domains)
+      {t("telegram.cloudflare")}
     </label>
 
     <label class="field" style="margin-top:14px">
-      Прямые адреса Telegram DC (формат DC:IP, по одному или через запятую)
+      {t("telegram.dcIps")}
       <textarea
         placeholder="2:149.154.167.220, 4:149.154.167.220"
         value={settings?.tgws_dc_ips ?? ""}
@@ -175,50 +176,48 @@
     </label>
 
     <label class="field" style="margin-top:14px">
-      Дополнительные аргументы
+      {t("telegram.extraArgs")}
       <input
         type="text"
-        placeholder="например: --fronting-domain=sprinthost.ru"
+        placeholder={t("telegram.extraPh")}
         value={settings?.tgws_extra ?? ""}
         onchange={(e) => store.saveSettings({ tgws_extra: (e.target as HTMLInputElement).value })}
       />
     </label>
 
     <div class="small dim" style="margin-top:12px;line-height:1.55">
-      После изменения порта или секрета перезапустите прокси и подключите Telegram заново по ссылке.
-      Если прямой адрес Telegram заблокирован, прокси сам перейдёт на Cloudflare.
+      {t("telegram.note")}
     </div>
   </div>
 </div>
 
 {#if confirmAction === "take"}
   <Modal
-    title="Освободить порт?"
-    subtitle={`${store.portOwner?.name ?? "Процесс"} · PID ${store.portOwner?.pid ?? "—"}`}
+    title={t("telegram.freePortTitle")}
+    subtitle={`${store.portOwner?.name ?? t("telegram.process")} · PID ${store.portOwner?.pid ?? "—"}`}
     onclose={() => (confirmAction = null)}
   >
     <div class="small muted" style="line-height:1.55">
-      Сейчас порт {settings?.tgws_port} занят другим Telegram-прокси. Manka остановит его и запустит свой
-      прокси на этом же порту. Текущие подключения Telegram будут разорваны.
+      {t("telegram.freePortText", { port: settings?.tgws_port ?? "" })}
     </div>
     <div class="row" style="justify-content:flex-end;margin-top:16px">
-      <button class="btn" onclick={() => (confirmAction = null)}>Отмена</button>
-      <button class="btn danger" onclick={takePort} disabled={store.busy}>Остановить и запустить</button>
+      <button class="btn" onclick={() => (confirmAction = null)}>{t("common.cancel")}</button>
+      <button class="btn danger" onclick={takePort} disabled={store.busy}>{t("telegram.takePort")}</button>
     </div>
   </Modal>
 {/if}
 
 {#if confirmAction === "regen"}
   <Modal
-    title="Сгенерировать новый секрет?"
-    subtitle="Telegram потребуется подключить заново"
+    title={t("telegram.regenTitle")}
+    subtitle={t("telegram.regenSubtitle")}
     onclose={() => (confirmAction = null)}
   >
     <div class="small muted" style="line-height:1.55">
-      Старая ссылка перестанет работать. Если прокси запущен, он будет перезапущен с новым секретом.
+      {t("telegram.regenText")}
     </div>
     <div class="row" style="justify-content:flex-end;margin-top:16px">
-      <button class="btn" onclick={() => (confirmAction = null)}>Отмена</button>
+      <button class="btn" onclick={() => (confirmAction = null)}>{t("common.cancel")}</button>
       <button
         class="btn danger"
         onclick={() => {
@@ -226,7 +225,7 @@
           void store.regenerateSecret();
         }}
       >
-        Сгенерировать
+        {t("telegram.regen")}
       </button>
     </div>
   </Modal>

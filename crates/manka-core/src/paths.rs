@@ -101,10 +101,6 @@ impl Paths {
         self.root.join("store-index")
     }
 
-    pub fn store_cache(&self) -> PathBuf {
-        self.root.join("store-cache")
-    }
-
     pub fn temp(&self) -> PathBuf {
         self.root.join("tmp")
     }
@@ -121,8 +117,7 @@ impl Paths {
 
     /// Directory of the installed zapret bundle (works for both engines).
     pub fn engine_dir(&self) -> Option<PathBuf> {
-        let info: ComponentCurrent =
-            crate::util::read_json(&self.current_file("zapret"))?;
+        let info: ComponentCurrent = crate::util::read_json(&self.current_file("zapret"))?;
         let dir = self.component("zapret").join(info.dir);
         if dir.join("winws2.exe").exists() || dir.join("winws.exe").exists() {
             Some(dir)
@@ -139,12 +134,23 @@ impl Paths {
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Clone, Debug)]
-pub struct ComponentCurrent {    pub version: String,
+pub struct ComponentCurrent {
+    pub version: String,
     pub dir: String,
     #[serde(default)]
     pub installed_at: i64,
     #[serde(default)]
     pub previous: Option<String>,
+    /// SHA256 of the downloaded archive, as published by the source.
+    #[serde(default)]
+    pub archive_sha256: Option<String>,
+    /// SHA256 of the main executable right after installation. The Doctor
+    /// screen re-checks it to detect tampering with installed binaries.
+    #[serde(default)]
+    pub exe_sha256: Option<String>,
+    /// Path of the main executable relative to `dir` (for the check above).
+    #[serde(default)]
+    pub exe_rel: Option<String>,
 }
 
 fn find_exe(dir: &Path, stem: &str) -> Option<PathBuf> {
@@ -172,10 +178,31 @@ fn find_exe(dir: &Path, stem: &str) -> Option<PathBuf> {
 }
 
 pub fn write_current(paths: &Paths, id: &str, version: &str, dir: &str) -> io::Result<()> {
+    write_current_full(paths, id, version, dir, None, None)
+}
+
+/// `write_current` plus integrity metadata (archive digest, executable hash).
+pub fn write_current_full(
+    paths: &Paths,
+    id: &str,
+    version: &str,
+    dir: &str,
+    archive_sha256: Option<String>,
+    exe: Option<(&Path, &Path)>,
+) -> io::Result<()> {
     let file = paths.current_file(id);
     let previous = crate::util::read_json::<ComponentCurrent>(&file)
         .map(|old| old.dir)
         .filter(|old| old != dir);
+    let (exe_sha256, exe_rel) = match exe {
+        Some((abs, base)) => (
+            crate::util::sha256_file(abs).ok(),
+            abs.strip_prefix(base)
+                .ok()
+                .map(|p| p.to_string_lossy().to_string()),
+        ),
+        None => (None, None),
+    };
     crate::util::write_json(
         &file,
         &ComponentCurrent {
@@ -183,6 +210,9 @@ pub fn write_current(paths: &Paths, id: &str, version: &str, dir: &str) -> io::R
             dir: dir.to_string(),
             installed_at: crate::util::now_ms(),
             previous,
+            archive_sha256,
+            exe_sha256,
+            exe_rel,
         },
     )
 }

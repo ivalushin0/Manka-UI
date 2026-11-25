@@ -3,6 +3,7 @@
   import { store } from "../lib/store.svelte";
   import { copyText, fmtTime, fmtUptime, percent, sourceTitle } from "../lib/utils";
   import { api } from "../lib/api";
+  import { t } from "../lib/i18n.svelte";
 
   const settings = $derived(store.settings);
   const active = $derived(store.activeStrategy);
@@ -45,8 +46,8 @@
   );
 
   async function copyLink() {
-    if (await copyText(tgLink)) store.notify("Ссылка скопирована");
-    else store.fail("Не удалось скопировать ссылку");
+    if (await copyText(tgLink)) store.notify(t("common.linkCopied"));
+    else store.fail(t("home.copyLinkFailed"));
   }
 
   async function openLink() {
@@ -62,19 +63,19 @@
   <div class="page-head">
     <div>
       <div class="page-title">Manka</div>
-      <div class="page-sub">Обход DPI для Windows: Zapret 2, Telegram-прокси и автоподбор стратегий</div>
+      <div class="page-sub">{t("home.subtitle")}</div>
     </div>
     <button class="btn small" onclick={() => store.refresh()} disabled={store.busy}>
-      <Icon name="refresh" size={15} /> Обновить
+      <Icon name="refresh" size={15} /> {t("common.refresh")}
     </button>
   </div>
 
   {#if !zapret?.installed}
     <div class="banner">
       <Icon name="package" size={20} />
-      <span class="grow">Движок Zapret ещё не установлен — скачайте официальный бандл, чтобы включить обход.</span>
+      <span class="grow">{t("home.zapretNotInstalled")}</span>
       <button class="btn small primary" onclick={() => store.installComponent("zapret")} disabled={store.busy}>
-        <Icon name="download" size={14} /> Установить
+        <Icon name="download" size={14} /> {t("common.install")}
       </button>
     </div>
   {/if}
@@ -84,7 +85,7 @@
       class="power {powerClass} {store.busy ? 'spin' : ''}"
       onclick={() => store.togglePower()}
       disabled={store.busy || (!store.elevated && !store.engineRunning)}
-      title={store.elevated ? "Включить / выключить обход" : "Нужны права администратора"}
+      title={store.elevated ? t("home.powerOn") : t("home.needAdmin")}
     >
       <Icon name="power" size={62} />
     </button>
@@ -92,24 +93,24 @@
     <div class="hero-text grow">
       <h2>
         {#if store.engineRunning}
-          Обход включён
+          {t("home.stateOn")}
         {:else if store.busy}
-          Применяю…
+          {t("home.stateApplying")}
         {:else if !store.elevated}
-          Нужны права администратора
+          {t("home.needAdmin")}
         {:else if settings?.enabled}
-          Движок остановлен
+          {t("home.stateEngineStopped")}
         {:else}
-          Обход выключен
+          {t("home.stateOff")}
         {/if}
       </h2>
       <p>
         {#if store.engineRunning && active}
           {active.name}
         {:else if !store.elevated}
-          WinDivert требует администратора. Перезапустите приложение с повышенными правами.
+          {t("home.needAdminDetail")}
         {:else}
-          Нажмите кнопку питания, чтобы поднять выбранную стратегию.
+          {t("home.powerHint")}
         {/if}
       </p>
 
@@ -118,21 +119,21 @@
           <span><Icon name="clock" size={14} /> {fmtUptime(engine.uptime_sec)}</span>
           <span>PID {engine.pid}</span>
           {#if settings?.last_check_rate != null && settings.last_check_rate >= 0}
-            <span>· последняя проверка {settings.last_check_rate}%</span>
+            <span>{t("home.lastCheck", { rate: settings.last_check_rate })}</span>
           {/if}
         </div>
       {/if}
 
       <div class="row" style="margin-top:16px">
         <button class="btn primary" onclick={() => (store.screen = "auto")}>
-          <Icon name="wand" size={16} /> Подобрать стратегию
+          <Icon name="wand" size={16} /> {t("home.pickStrategy")}
         </button>
         <button class="btn" onclick={() => (store.screen = "strategies")}>
-          <Icon name="layers" size={16} /> Стратегии
+          <Icon name="layers" size={16} /> {t("nav.strategies")}
         </button>
         <button class="btn" onclick={() => store.runDiagnostics()} disabled={store.diagnosticsBusy}>
           <Icon name="bolt" size={16} />
-          {store.diagnosticsBusy ? "Проверяю…" : "Диагностика"}
+          {store.diagnosticsBusy ? t("common.checking") : t("nav.doctor")}
         </button>
       </div>
     </div>
@@ -140,7 +141,7 @@
 
   <div class="card">
     <div class="card-title">
-      <Icon name="package" size={17} /> Установленные движки DPI
+      <Icon name="package" size={17} /> {t("engines.installed")}
       <span class="badge muted">{installed.length}</span>
     </div>
     {#if installed.length}
@@ -152,7 +153,7 @@
             <div class="grow" style="min-width:0">
               <div class="name">{c.name}</div>
               <div class="sub">
-                {c.version ? `v${c.version.replace(/^v/i, "")}` : "установлен"} · движок DPI
+                {c.version ? `v${c.version.replace(/^v/i, "")}` : t("common.installed")} · {t("home.dpiEngine")}
               </div>
             </div>
             <button
@@ -162,18 +163,17 @@
               onclick={() => store.togglePower()}
               disabled={store.busy || !store.elevated}
             >
-              {active ? "Остановить" : "Запустить"}
+              {active ? t("common.stop") : t("common.start")}
             </button>
           </div>
         {/each}
       </div>
       <div class="small dim" style="margin-top:10px;line-height:1.5">
-        Движок DPI может быть активен только один. Telegram-прокси работает отдельно и может быть включён
-        одновременно с обходом.
+        {t("home.singleEngineNote")}
       </div>
     {:else}
       <div class="empty">
-        Движок DPI не установлен. Откройте «Компоненты» и установите Zapret 2.
+        {t("home.noEngine")}
       </div>
     {/if}
   </div>
@@ -191,7 +191,7 @@
   {#if store.serviceResults && overall}
     <div class="card">
       <div class="card-title">
-        <Icon name="bolt" size={17} /> Результат проверки
+        <Icon name="bolt" size={17} /> {t("home.checkResult")}
         <span class="badge" class:ok={overall.pc >= 90} class:warn={overall.pc < 90 && overall.pc > 0} class:bad={overall.pc === 0}>
           {overall.pc}% · {overall.ok}/{overall.total}
         </span>
@@ -202,7 +202,7 @@
             <span class="dot" class:ok={g.pc === 100} class:warn={g.pc > 0 && g.pc < 100} class:bad={g.pc === 0}></span>
             <div class="grow">
               <div class="name">{g.title}</div>
-              <div class="sub">{g.ok} из {g.total} запросов</div>
+              <div class="sub">{t("home.requestsOf", { ok: g.ok, total: g.total })}</div>
             </div>
             <span class="badge" class:ok={g.pc === 100} class:warn={g.pc > 0 && g.pc < 100} class:bad={g.pc === 0}>{g.pc}%</span>
           </div>
@@ -210,7 +210,7 @@
       </div>
       {#if groups.some((g) => g.pc < 100)}
         <details style="margin-top:12px">
-          <summary class="small muted" style="cursor:pointer">Что не открылось</summary>
+          <summary class="small muted" style="cursor:pointer">{t("home.whatFailed")}</summary>
           <div class="list" style="margin-top:9px">
             {#each groups.filter((g) => g.pc < 100) as g (g.id)}
               {#each g.failed as r (r.url)}
@@ -230,27 +230,27 @@
   <div class="grid-2">
     <div class="card">
       <div class="card-title">
-        <Icon name="send" size={17} /> Telegram-прокси
-        <span class="badge" class:ok={proxyOn} class:muted={!proxyOn}>{proxyOn ? "работает" : "выключен"}</span>
+        <Icon name="send" size={17} /> {t("engines.tgProxy")}
+        <span class="badge" class:ok={proxyOn} class:muted={!proxyOn}>{proxyOn ? t("common.running") : t("home.proxyOff")}</span>
       </div>
       <p class="small muted" style="line-height:1.55">
-        MTProto-прокси через WebSocket и Cloudflare. Трея нет, соединения идут на 127.0.0.1:{settings?.tgws_port}.
+        {t("home.proxyDesc", { port: settings?.tgws_port ?? "" })}
       </p>
       <div class="row" style="margin-top:14px">
         <button class="btn" class:primary={!proxyOn} class:danger={proxyOn} onclick={() => store.toggleProxy()} disabled={store.busy || !tgws?.installed}>
-          <Icon name={proxyOn ? "stop" : "play"} size={15} /> {proxyOn ? "Остановить" : "Запустить"}
+          <Icon name={proxyOn ? "stop" : "play"} size={15} /> {proxyOn ? t("common.stop") : t("common.start")}
         </button>
-        <button class="btn small ghost" onclick={copyLink}><Icon name="copy" size={14} /> Ссылка</button>
-        <button class="btn small ghost" onclick={openLink}><Icon name="external" size={14} /> Открыть</button>
+        <button class="btn small ghost" onclick={copyLink}><Icon name="copy" size={14} /> {t("home.link")}</button>
+        <button class="btn small ghost" onclick={openLink}><Icon name="external" size={14} /> {t("common.open")}</button>
       </div>
       {#if !tgws?.installed}
-        <div class="small dim" style="margin-top:10px">Прокси не установлен — вкладка «Компоненты».</div>
+        <div class="small dim" style="margin-top:10px">{t("home.proxyNotInstalled")}</div>
       {/if}
     </div>
 
     <div class="card">
       <div class="card-title">
-        <Icon name="layers" size={17} /> Текущий профиль
+        <Icon name="layers" size={17} /> {t("home.currentProfile")}
         <span class="badge muted">{settings?.engine === "zapret2" ? "Zapret 2" : "Zapret legacy"}</span>
       </div>
       {#if dpiInstalled}
@@ -268,7 +268,7 @@
           <div class="grow">
             <div class="name" style="font-weight:600">{active.name}</div>
             <div class="sub dim small" style="margin-top:4px">
-              {active.description ?? (active.tags.length ? active.tags.map((t) => "#" + t).join(" ") : "Стратегия готова к запуску")}
+              {active.description ?? (active.tags.length ? active.tags.map((tag) => "#" + tag).join(" ") : t("home.strategyReady"))}
             </div>
           </div>
           {#if active.score != null}<span class="badge ok">{active.score}%</span>{/if}
@@ -279,14 +279,38 @@
           {#if active.game_filter}<span class="badge warn">game filter</span>{/if}
         </div>
       {:else}
-        <div class="small muted">Для выбранного движка стратегия не выбрана. Выберите её на вкладке «Стратегии».</div>
+        <div class="small muted">{t("home.noStrategy")}</div>
       {/if}
+      <div style="margin-top:14px">
+        <div class="small dim" style="margin-bottom:6px">{t("home.bypassScope")}</div>
+        <div class="tabs">
+          <button
+            class:on={(settings?.bypass_scope ?? "list") === "list"}
+            onclick={() => store.saveSettings({ bypass_scope: "list" })}
+            title={t("home.scopeListHint")}
+          >
+            {t("home.scopeList")}
+          </button>
+          <button
+            class:on={settings?.bypass_scope === "all"}
+            onclick={() => store.saveSettings({ bypass_scope: "all" })}
+            title={t("home.scopeAllHint")}
+          >
+            {t("home.scopeAll")}
+          </button>
+        </div>
+        {#if settings?.bypass_scope === "all"}
+          <div class="small dim" style="margin-top:8px">
+            {t("home.scopeAllNote")}
+          </div>
+        {/if}
+      </div>
       <div class="row" style="margin-top:14px">
-        <button class="btn small" onclick={() => (store.screen = "strategies")}>Сменить стратегию</button>
-        <button class="btn small ghost" onclick={() => (store.screen = "logs")}>Журнал</button>
+        <button class="btn small" onclick={() => (store.screen = "strategies")}>{t("home.changeStrategy")}</button>
+        <button class="btn small ghost" onclick={() => (store.screen = "logs")}>{t("nav.logs")}</button>
       </div>
       {#if settings?.last_check}
-        <div class="small dim" style="margin-top:10px">Последняя диагностика: {fmtTime(settings.last_check)}</div>
+        <div class="small dim" style="margin-top:10px">{t("home.lastDiagnostics", { time: fmtTime(settings.last_check) })}</div>
       {/if}
     </div>
   </div>

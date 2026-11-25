@@ -25,9 +25,10 @@ fn check(args: &[String], engine_dir: &std::path::Path) -> Result<(), String> {
         ] {
             if let Some(path) = a.strip_prefix(prefix) {
                 if (path.starts_with('/') || path.contains(":\\"))
-                    && !std::path::Path::new(path).exists() {
-                        return Err(format!("missing referenced list: {path}"));
-                    }
+                    && !std::path::Path::new(path).exists()
+                {
+                    return Err(format!("missing referenced list: {path}"));
+                }
             }
         }
         if let Some(rest) = a.strip_prefix("--blob=") {
@@ -78,7 +79,10 @@ async fn installs_and_renders() {
 
     // ---- built-in strategy rendering
     let builtins = builtin::builtin();
-    let z2 = builtins.iter().find(|s| s.engine == Engine::Zapret2).unwrap();
+    let z2 = builtins
+        .iter()
+        .find(|s| s.engine == Engine::Zapret2)
+        .unwrap();
     let rendered = args::render(z2, &settings, &paths, Some(&engine_dir), None).unwrap();
     println!("builtin args: {}", rendered.command_line);
     check(&rendered.args, &engine_dir).unwrap();
@@ -92,8 +96,14 @@ async fn installs_and_renders() {
         .unwrap();
     let exe = paths.tgws_exe().expect("tgws exe");
     println!("tgws exe: {}", exe.display());
-    let out = std::process::Command::new(&exe).arg("--version").output().unwrap();
-    println!("tgws version: {}", String::from_utf8_lossy(&out.stdout).trim());
+    let out = std::process::Command::new(&exe)
+        .arg("--version")
+        .output()
+        .unwrap();
+    println!(
+        "tgws version: {}",
+        String::from_utf8_lossy(&out.stdout).trim()
+    );
     assert!(out.status.success());
 
     // ---- store index + kit
@@ -117,7 +127,13 @@ async fn installs_and_renders() {
     let mut rendered_any = 0;
     for preset in &presets {
         let kit_dir = preset.kit_id.as_ref().map(|id| paths.kit(id));
-        match args::render(preset, &settings, &paths, Some(&engine_dir), kit_dir.as_deref()) {
+        match args::render(
+            preset,
+            &settings,
+            &paths,
+            Some(&engine_dir),
+            kit_dir.as_deref(),
+        ) {
             Ok(r) => match check(&r.args, &engine_dir) {
                 Ok(()) => {
                     println!("rendered {} ({} args)", preset.name, r.args.len());
@@ -139,7 +155,14 @@ async fn installs_and_renders() {
     if manka_core::util::is_elevated() {
         let pm = ProcessManager::default();
         let log = paths.logs().join("engine.log");
-        let rendered = args::render(&active, &settings, &paths, Some(&engine_dir), active.kit_id.as_ref().map(|id| paths.kit(id)).as_deref()).unwrap();
+        let rendered = args::render(
+            &active,
+            &settings,
+            &paths,
+            Some(&engine_dir),
+            active.kit_id.as_ref().map(|id| paths.kit(id)).as_deref(),
+        )
+        .unwrap();
         let exe = rendered.exe.clone().unwrap();
         pm.start_engine(&exe, &rendered.args, rendered.working_dir.as_deref(), &log)
             .await
@@ -148,7 +171,11 @@ async fn installs_and_renders() {
         let status = pm.engine_status(&log).await;
         let tail = manka_core::util::tail_lines(&log, 20).join("\n");
         pm.stop_engine(&log).await;
-        println!("engine running after 3s: {} {}\n{tail}", status.running, status.detail.unwrap_or_default());
+        println!(
+            "engine running after 3s: {} {}\n{tail}",
+            status.running,
+            status.detail.unwrap_or_default()
+        );
         assert!(status.running, "winws2 did not stay running:\n{tail}");
     } else {
         println!("not elevated, skipping live winws2 start");

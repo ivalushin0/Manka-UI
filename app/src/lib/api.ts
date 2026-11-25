@@ -6,7 +6,9 @@ import type {
   AutoState,
   CandidateResult,
   ComponentStatus,
+  DoctorReport,
   Engine,
+  ListsReport,
   LogInfo,
   Progress,
   Settings,
@@ -16,6 +18,7 @@ import type {
   Strategy,
   TgwsCheck,
   PortOwner,
+  WatchdogReport,
 } from "./types";
 
 export const api = {
@@ -65,6 +68,10 @@ export const api = {
   openLogsDir: () => invoke("open_logs_dir"),
   setAutostart: (enabled: boolean) => invoke("set_autostart", { enabled }),
   deleteStrategy: (id: string) => invoke("delete_strategy", { id }),
+  listsUpdateNow: () => invoke<ListsReport>("lists_update_now"),
+  doctorRun: () => invoke<DoctorReport>("doctor_run"),
+  doctorExport: () => invoke<string>("doctor_export"),
+  watchdogCheckNow: () => invoke<WatchdogReport>("watchdog_check_now"),
 };
 
 export type ProgressEvent = Progress;

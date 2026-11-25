@@ -4,6 +4,7 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { sourceTitle } from "../lib/utils";
+  import { t } from "../lib/i18n.svelte";
   import type { Engine, Strategy } from "../lib/types";
 
   let engine = $state<Engine>(store.settings?.engine ?? "zapret2");
@@ -75,7 +76,7 @@
     await store.guard(async () => {
       await api.deleteStrategy(s.id);
       await store.refresh();
-      store.notify(`Удалено: ${s.name}`);
+      store.notify(t("strategies.deleted", { name: s.name }));
     });
   }
 
@@ -85,7 +86,7 @@
       const saved = await api.setActiveStrategy(s.engine, s.id);
       if (store.data) store.data.settings = saved;
       await store.refresh();
-      store.notify(`Применено: ${s.name}`);
+      store.notify(t("strategies.applied", { name: s.name }));
     });
   }
 
@@ -108,8 +109,8 @@
 <div class="page">
   <div class="page-head">
     <div>
-      <div class="page-title">Стратегии</div>
-      <div class="page-sub">Встроенные, из магазина CDPI и найденные автоподбором</div>
+      <div class="page-title">{t("nav.strategies")}</div>
+      <div class="page-sub">{t("strategies.subtitle")}</div>
     </div>
     <div class="tabs">
       <button class:on={engine === "zapret2"} onclick={() => (engine = "zapret2")}>Zapret 2</button>
@@ -121,14 +122,15 @@
     <div class="row">
       <div class="search">
         <Icon name="search" size={15} />
-        <input type="text" placeholder="Поиск по названию, тегу, источнику…" bind:value={query} />
+        <input type="text" placeholder={t("strategies.searchPh")} bind:value={query} />
       </div>
       <button class="btn" class:primary={showCatalog} onclick={toggleCatalog} disabled={catalogLoading}>
-        <Icon name="layers" size={15} /> {catalogLoading ? "Загружаю…" : showCatalog ? "Скрыть каталог" : "Показать каталог"}
+        <Icon name="layers" size={15} />
+        {catalogLoading ? t("common.loading") : showCatalog ? t("strategies.hideCatalog") : t("strategies.showCatalog")}
       </button>
     </div>
     <div class="row" style="margin-top:12px">
-      {#each [["all", "Все"], ["builtin", "Встроенные"], ["store", "Магазин"], ["auto", "Автоподбор"], ["user", "Свои"]] as [id, title] (id)}
+      {#each [["all", t("common.all")], ["builtin", t("strategies.filterBuiltin")], ["store", t("strategies.filterStore")], ["auto", t("strategies.filterAuto")], ["user", t("strategies.filterUser")]] as [id, title] (id)}
         <button class="chip" class:on={source === id} onclick={() => (source = id)}>
           {title}
           <span class="dim">{counts[id] ?? 0}</span>
@@ -138,13 +140,12 @@
   </div>
 
   <div class="small dim" style="margin-top:-6px">
-    Фиолетовой рамкой выделена только активная стратегия. «Применить» переключает движок на выбранный вариант;
-    процент у стратегий автоподбора — результат последней проверки.
+    {t("strategies.note")}
   </div>
 
   {#if filtered.length === 0}
     <div class="empty">
-      Ничего не найдено. Установите наборы в «Компонентах» или откройте каталог.
+      {t("strategies.empty")}
     </div>
   {/if}
 
@@ -159,9 +160,9 @@
             {#if s.game_filter}<span class="badge warn">game</span>{/if}
             {#if s.score != null}<span class="badge ok">{s.score}%</span>{/if}
             {#if isRunning(s)}
-              <span class="badge ok">работает</span>
+              <span class="badge ok">{t("common.running")}</span>
             {:else if isSelected(s)}
-              <span class="badge muted">активна для движка</span>
+              <span class="badge muted">{t("strategies.activeForEngine")}</span>
             {/if}
           </div>
           {#if s.description}
@@ -183,7 +184,7 @@
                       value={optionValue(s, o.variable)}
                       onchange={(e) => store.setOption(s.id, o.variable, Number((e.target as HTMLSelectElement).value))}
                     >
-                      <option value={-1}>По умолчанию ({o.default_value})</option>
+                      <option value={-1}>{t("strategies.defaultOption", { value: o.default_value })}</option>
                       {#each o.values as v, i (i)}
                         <option value={i}>{v.length > 110 ? v.slice(0, 110) + "…" : v}</option>
                       {/each}
@@ -204,7 +205,7 @@
                 {/each}
               {/if}
               <div>
-                <div class="small dim" style="margin-bottom:5px">Аргументы</div>
+                <div class="small dim" style="margin-bottom:5px">{t("strategies.args")}</div>
                 <div class="mono wrap" style="max-height:140px;overflow:auto;color:#9fb0cf">{s.template}</div>
               </div>
             </div>
@@ -213,7 +214,7 @@
 
         <div class="row" style="flex:none">
           <button class="btn small" onclick={() => (expanded = expanded === s.id ? null : s.id)}>
-            {expanded === s.id ? "Свернуть" : "Параметры"}
+            {expanded === s.id ? t("strategies.collapse") : t("strategies.params")}
           </button>
           <button
             class="btn small"
@@ -221,17 +222,17 @@
             disabled={store.busy || (isSelected(s) && currentEngine === s.engine)}
           >
             {isRunning(s)
-              ? "Работает"
+              ? t("strategies.running")
               : isSelected(s)
                 ? currentEngine === s.engine
-                  ? "Выбрана"
-                  : "Переключить движок"
-                : "Применить"}
+                  ? t("strategies.selected")
+                  : t("strategies.switchEngine")
+                : t("common.apply")}
           </button>
           {#if s.source === "auto" || s.source === "user"}
             <button
               class="btn small danger"
-              title="Удалить"
+              title={t("common.delete")}
               onclick={() => (pendingDelete = s)}
             >
               <Icon name="trash" size={14} />
@@ -245,18 +246,17 @@
 
 {#if pendingDelete}
   <Modal
-    title="Удалить стратегию?"
+    title={t("strategies.deleteTitle")}
     subtitle={pendingDelete.name}
     onclose={() => (pendingDelete = null)}
   >
     <div class="small muted" style="line-height:1.55">
-      Стратегия будет удалена из списка. Если она сейчас активна, обход останется работать до перезапуска,
-      но выбрать её снова будет нельзя.
+      {t("strategies.deleteText")}
     </div>
     <div class="row" style="justify-content:flex-end;margin-top:16px">
-      <button class="btn" onclick={() => (pendingDelete = null)}>Отмена</button>
+      <button class="btn" onclick={() => (pendingDelete = null)}>{t("common.cancel")}</button>
       <button class="btn danger" onclick={confirmDelete}>
-        <Icon name="trash" size={14} /> Удалить
+        <Icon name="trash" size={14} /> {t("common.delete")}
       </button>
     </div>
   </Modal>

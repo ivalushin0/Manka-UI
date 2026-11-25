@@ -5,9 +5,9 @@ use crate::model::Engine;
 use crate::paths::Paths;
 
 fn default_secret() -> String {
-    use rand::RngCore;
+    use rand::Rng;
     let mut bytes = [0u8; 16];
-    rand::thread_rng().fill_bytes(&mut bytes);
+    rand::rng().fill_bytes(&mut bytes);
     hex::encode(bytes)
 }
 
@@ -51,6 +51,14 @@ fn default_buf_kb() -> u32 {
     256
 }
 
+fn default_scope() -> String {
+    "list".into()
+}
+
+fn default_watchdog_interval() -> u32 {
+    15
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct Settings {
@@ -66,8 +74,10 @@ pub struct Settings {
     pub fake_sni: String,
     pub block_quic: bool,
     pub autostart: bool,
-    pub minimize_to_tray: bool,
     pub start_minimized: bool,
+    /// "list" — обход только для доменов из manka-hostlist.txt (+ внешних
+    /// списков); "all" — десинк применяется ко всему TLS/HTTP-трафику.
+    pub bypass_scope: String,
 
     // ---- Telegram proxy
     pub tgws_enabled: bool,
@@ -92,6 +102,21 @@ pub struct Settings {
     pub last_check: i64,
     pub last_check_rate: i64,
 
+    // ---- watchdog (self-healing)
+    pub watchdog_enabled: bool,
+    pub watchdog_interval_min: u32,
+    /// true — при деградации сразу запускать переподбор и применять лучшую
+    /// стратегию; false — только уведомлять.
+    pub watchdog_auto_fix: bool,
+    pub last_watchdog_check: i64,
+
+    // ---- external domain lists
+    pub lists_auto_update: bool,
+    pub lists_update_interval_hours: u32,
+    /// Дополнительные https-источники списков доменов (по одному на строку).
+    pub lists_sources: String,
+    pub last_lists_update: i64,
+
     // ---- updates and UI
     pub update_interval_hours: u32,
     pub last_update_check: i64,
@@ -100,7 +125,6 @@ pub struct Settings {
     pub auto_update_check: bool,
     pub app_update_interval_hours: u32,
     pub last_app_update_check: i64,
-    pub check_components_on_start: bool,
     pub debug_logs: bool,
     pub language: String,
     pub theme: String,
@@ -118,8 +142,8 @@ impl Default for Settings {
             fake_sni: "www.google.com".into(),
             block_quic: true,
             autostart: false,
-            minimize_to_tray: true,
             start_minimized: true,
+            bypass_scope: default_scope(),
 
             tgws_enabled: false,
             tgws_port: default_port(),
@@ -141,13 +165,22 @@ impl Default for Settings {
             last_check: 0,
             last_check_rate: -1,
 
+            watchdog_enabled: true,
+            watchdog_interval_min: default_watchdog_interval(),
+            watchdog_auto_fix: true,
+            last_watchdog_check: 0,
+
+            lists_auto_update: false,
+            lists_update_interval_hours: 24,
+            lists_sources: String::new(),
+            last_lists_update: 0,
+
             update_interval_hours: default_interval(),
             last_update_check: 0,
             update_repo: "ivalushin0/Manka-UI".into(),
             auto_update_check: true,
             app_update_interval_hours: 24,
             last_app_update_check: 0,
-            check_components_on_start: true,
             debug_logs: false,
             language: default_language(),
             theme: default_theme(),
@@ -157,8 +190,39 @@ impl Default for Settings {
 }
 
 impl Settings {
+    /// Load settings. A missing file yields defaults; a corrupt file is backed
+    /// up next to the original and reported in the app log instead of being
+    /// silently discarded.
     pub fn load(paths: &Paths) -> Self {
-        crate::util::read_json(&paths.settings_file()).unwrap_or_default()
+        let file = paths.settings_file();
+        if file.exists() {
+            match std::fs::read_to_string(&file) {
+                Ok(text) => match serde_json::from_str::<Settings>(&text) {
+                    Ok(settings) => return settings,
+                    Err(e) => {
+                        let backup = file.with_extension(format!(
+                            "corrupt-{}.json",
+                            chrono::Local::now().format("%Y%m%d-%H%M%S")
+                        ));
+                        let _ = std::fs::copy(&file, &backup);
+                        crate::util::append_log(
+                            &paths.logs().join("app.log"),
+                            &format!(
+                                "settings.json повреждён ({e}); копия сохранена в {}",
+                                backup.display()
+                            ),
+                        );
+                    }
+                },
+                Err(e) => {
+                    crate::util::append_log(
+                        &paths.logs().join("app.log"),
+                        &format!("settings.json не читается: {e}"),
+                    );
+                }
+            }
+        }
+        Self::default()
     }
 
     pub fn save(&self, paths: &Paths) -> std::io::Result<()> {

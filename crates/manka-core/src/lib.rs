@@ -8,7 +8,10 @@ pub mod args;
 pub mod autoselect;
 pub mod builtin;
 pub mod components;
+pub mod doctor;
 pub mod history;
+pub mod http;
+pub mod lists;
 pub mod model;
 pub mod paths;
 pub mod probe;
@@ -17,6 +20,7 @@ pub mod runner;
 pub mod settings;
 pub mod store;
 pub mod util;
+pub mod watchdog;
 
 pub use model::{Engine, Source, Strategy};
 pub use paths::Paths;

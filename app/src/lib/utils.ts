@@ -1,4 +1,5 @@
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
+import { locale, t } from "./i18n.svelte";
 
 export async function copyText(text: string): Promise<boolean> {
   try {
@@ -15,19 +16,19 @@ export async function copyText(text: string): Promise<boolean> {
 }
 
 export function fmtUptime(sec: number): string {
-  if (!sec) return "0 с";
+  if (!sec) return `0 ${t("units.sec")}`;
   const h = Math.floor(sec / 3600);
   const m = Math.floor((sec % 3600) / 60);
   const s = sec % 60;
-  if (h) return `${h} ч ${m} мин`;
-  if (m) return `${m} мин ${s} с`;
-  return `${s} с`;
+  if (h) return `${h} ${t("units.hour")} ${m} ${t("units.min")}`;
+  if (m) return `${m} ${t("units.min")} ${s} ${t("units.sec")}`;
+  return `${s} ${t("units.sec")}`;
 }
 
 export function fmtTime(ms: number): string {
   if (!ms) return "—";
   const d = new Date(ms);
-  return d.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return d.toLocaleString(locale(), { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
 }
 
 export function percent(ok: number, total: number): number {
@@ -43,28 +44,22 @@ export function hostOf(url: string): string {
 }
 
 export function fmtBytes(bytes: number): string {
-  if (!bytes) return "0 Б";
-  if (bytes < 1024) return `${bytes} Б`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} КБ`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} МБ`;
+  if (!bytes) return `0 ${t("units.b")}`;
+  if (bytes < 1024) return `${bytes} ${t("units.b")}`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} ${t("units.kb")}`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} ${t("units.mb")}`;
 }
 
 export function sourceTitle(source: string): string {
   switch (source) {
     case "builtin":
-      return "Встроенная";
     case "store":
-      return "Магазин";
     case "auto":
-      return "Автоподбор";
     case "user":
-      return "Своя";
     case "catalog":
-      return "Каталог";
     case "external":
-      return "Внешняя";
     case "zapretgui":
-      return "Zapret GUI";
+      return t(`source.${source}`);
     default:
       return source;
   }

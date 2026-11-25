@@ -65,8 +65,7 @@ fn spawn_with_log(
         cmd.current_dir(dir);
     }
     create_no_window(&mut cmd);
-    cmd.spawn()
-        .map_err(|e| format!("{}: {e}", exe.display()))
+    cmd.spawn().map_err(|e| format!("{}: {e}", exe.display()))
 }
 
 async fn stop_locked(slot: &mut Option<Running>, log: &Path) {

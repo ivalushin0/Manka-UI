@@ -43,7 +43,13 @@ pub fn active(paths: &Paths, settings: &Settings, engine: Engine) -> Option<Stra
 }
 
 /// Store a winning autoselection result as a reusable preset.
-pub fn save_auto(paths: &Paths, name: &str, engine: Engine, template: &str, percent: u32) -> Result<Strategy, String> {
+pub fn save_auto(
+    paths: &Paths,
+    name: &str,
+    engine: Engine,
+    template: &str,
+    percent: u32,
+) -> Result<Strategy, String> {
     let mut list = user_strategies(paths);
     if let Some(existing) = list
         .iter()
@@ -82,7 +88,9 @@ fn auto_display_name(name: &str) -> String {
 }
 
 fn auto_strategy(engine: Engine, name: &str, template: &str, percent: u32) -> Strategy {
-    let id = format!("auto-{}", crate::util::hash_id(template));
+    // the engine is part of the id: the same template can exist for both
+    // winws and winws2 and they must not collide in presets.json
+    let id = format!("auto-{}-{}", engine.id(), crate::util::hash_id(template));
     let mut s = Strategy::new(id, engine, auto_display_name(name), template);
     s.source = Source::Auto;
     s.score = Some(percent);
@@ -101,9 +109,10 @@ pub fn save_auto_results(
     }
     let mut list = user_strategies(paths);
     for (engine, name, template, percent) in items {
-        if let Some(existing) = list.iter_mut().find(|s| {
-            s.source == Source::Auto && s.engine == *engine && s.template == *template
-        }) {
+        if let Some(existing) = list
+            .iter_mut()
+            .find(|s| s.source == Source::Auto && s.engine == *engine && s.template == *template)
+        {
             existing.score = Some(*percent);
             continue;
         }
@@ -126,8 +135,92 @@ pub fn delete_user(paths: &Paths, id: &str) -> Result<(), String> {
 }
 
 /// Remember which strategy each engine uses.
-pub fn set_active(paths: &Paths, settings: &mut Settings, engine: Engine, id: &str) -> Result<(), String> {
+pub fn set_active(
+    paths: &Paths,
+    settings: &mut Settings,
+    engine: Engine,
+    id: &str,
+) -> Result<(), String> {
     settings.set_active(engine, id);
     settings.engine = engine;
     settings.save(paths).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_auto_deduplicates_by_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        let a = save_auto(
+            &paths,
+            "Alpha",
+            Engine::Zapret2,
+            "--wf-tcp=443 --lua-desync=fake",
+            80,
+        )
+        .unwrap();
+        let b = save_auto(
+            &paths,
+            "Alpha 2",
+            Engine::Zapret2,
+            "--wf-tcp=443 --lua-desync=fake",
+            95,
+        )
+        .unwrap();
+        assert_eq!(a.id, b.id, "same template must map to the same preset");
+        assert_eq!(b.score, Some(95), "score is refreshed");
+        let list = user_strategies(&paths);
+        assert_eq!(
+            list.iter()
+                .filter(|s| s.template == "--wf-tcp=443 --lua-desync=fake")
+                .count(),
+            1
+        );
+        // a different engine with the same template is a separate preset
+        let c = save_auto(
+            &paths,
+            "Legacy",
+            Engine::Zapret,
+            "--wf-tcp=443 --lua-desync=fake",
+            50,
+        )
+        .unwrap();
+        assert_ne!(a.id, c.id);
+    }
+
+    #[test]
+    fn save_auto_results_merges() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        save_auto_results(
+            &paths,
+            &[
+                (Engine::Zapret2, "A".into(), "--x=1".into(), 60),
+                (Engine::Zapret2, "B".into(), "--x=2".into(), 70),
+            ],
+        )
+        .unwrap();
+        save_auto_results(&paths, &[(Engine::Zapret2, "A".into(), "--x=1".into(), 90)]).unwrap();
+        let list = user_strategies(&paths);
+        assert_eq!(list.len(), 2);
+        assert_eq!(
+            list.iter().find(|s| s.template == "--x=1").unwrap().score,
+            Some(90)
+        );
+    }
+
+    #[test]
+    fn delete_user_removes_only_target() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        let a = save_auto(&paths, "A", Engine::Zapret2, "--x=1", 10).unwrap();
+        let b = save_auto(&paths, "B", Engine::Zapret2, "--x=2", 20).unwrap();
+        delete_user(&paths, &a.id).unwrap();
+        let list = user_strategies(&paths);
+        assert_eq!(list.len(), 1);
+        assert_eq!(list[0].id, b.id);
+    }
 }

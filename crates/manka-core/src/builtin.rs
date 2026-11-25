@@ -176,7 +176,14 @@ const Z1_QUICK: &[&str] = &[
 fn z2_full() -> Vec<String> {
     let mut out: Vec<String> = Z2_QUICK.iter().map(|s| s.to_string()).collect();
     let positions = [
-        "2", "1", "sniext+1", "sniext+4", "host+1", "midsld", "1,midsld", "1,midsld,1220",
+        "2",
+        "1",
+        "sniext+1",
+        "sniext+4",
+        "host+1",
+        "midsld",
+        "1,midsld",
+        "1,midsld,1220",
         "1,sniext+1,host+1,midsld-2,midsld,midsld+2,endhost-1",
     ];
     for mode in ["multisplit", "multidisorder"] {
@@ -199,8 +206,12 @@ fn z2_full() -> Vec<String> {
         "ip_ttl=4",
     ] {
         out.push(format!("--lua-desync=fake:blob=fake_default_tls:{f}"));
-        out.push(format!("--lua-desync=fake:blob=fake_default_tls:{f} --lua-desync=multisplit:pos=1,midsld"));
-        out.push(format!("--lua-desync=fake:blob=fake_default_tls:{f} --lua-desync=multidisorder:pos=1,midsld"));
+        out.push(format!(
+            "--lua-desync=fake:blob=fake_default_tls:{f} --lua-desync=multisplit:pos=1,midsld"
+        ));
+        out.push(format!(
+            "--lua-desync=fake:blob=fake_default_tls:{f} --lua-desync=multidisorder:pos=1,midsld"
+        ));
         out.push(format!(
             "--lua-desync=fake:blob=fake_default_tls:{f}:tls_mod=rnd,dupsid,padencap"
         ));
@@ -210,7 +221,15 @@ fn z2_full() -> Vec<String> {
 
 fn z1_full() -> Vec<String> {
     let mut out: Vec<String> = Z1_QUICK.iter().map(|s| s.to_string()).collect();
-    let positions = ["1", "2", "midsld", "1,midsld", "sniext+1", "host+1", "1,sniext+1,host+1,midsld"];
+    let positions = [
+        "1",
+        "2",
+        "midsld",
+        "1,midsld",
+        "sniext+1",
+        "host+1",
+        "1,sniext+1,host+1,midsld",
+    ];
     for mode in ["multisplit", "multidisorder"] {
         for p in positions {
             out.push(format!("--dpi-desync={mode} --dpi-desync-split-pos={p}"));
@@ -265,7 +284,14 @@ pub fn catalog(engine: Engine, full: bool) -> Vec<Strategy> {
                 template,
             );
             s.source = Source::Catalog;
-            s.description = Some((if full { "полный" } else { "быстрый" }).to_string());
+            s.description = Some(
+                (if full {
+                    "полный"
+                } else {
+                    "быстрый"
+                })
+                .to_string(),
+            );
             s
         })
         .collect()

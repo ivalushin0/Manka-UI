@@ -10,18 +10,21 @@
   import Telegram from "./screens/Telegram.svelte";
   import SettingsScreen from "./screens/Settings.svelte";
   import Logs from "./screens/Logs.svelte";
+  import Doctor from "./screens/Doctor.svelte";
   import type { AutoState, Progress } from "./lib/types";
   import { api } from "./lib/api";
+  import { locale, t } from "./lib/i18n.svelte";
 
-  const nav: { id: Screen; label: string; icon: string }[] = [
-    { id: "home", label: "Главная", icon: "home" },
-    { id: "strategies", label: "Стратегии", icon: "layers" },
-    { id: "auto", label: "Автоподбор", icon: "wand" },
-    { id: "components", label: "Компоненты", icon: "package" },
-    { id: "telegram", label: "Telegram", icon: "send" },
-    { id: "logs", label: "Журнал", icon: "terminal" },
-    { id: "settings", label: "Настройки", icon: "sliders" },
-  ];
+  const nav = $derived<{ id: Screen; label: string; icon: string }[]>([
+    { id: "home", label: t("nav.home"), icon: "home" },
+    { id: "strategies", label: t("nav.strategies"), icon: "layers" },
+    { id: "auto", label: t("nav.auto"), icon: "wand" },
+    { id: "components", label: t("nav.components"), icon: "package" },
+    { id: "telegram", label: t("nav.telegram"), icon: "send" },
+    { id: "doctor", label: t("nav.doctor"), icon: "stethoscope" },
+    { id: "logs", label: t("nav.logs"), icon: "terminal" },
+    { id: "settings", label: t("nav.settings"), icon: "sliders" },
+  ]);
 
   let relaunching = $state(false);
 
@@ -63,6 +66,10 @@
         await listen("components-changed", () => store.refresh()),
         await listen("store-changed", () => store.refresh()),
         await listen("status-changed", () => store.refresh()),
+        await listen<import("./lib/types").WatchdogReport>("watchdog", (e) => store.onWatchdog(e.payload)),
+        await listen<{ name: string; percent: number }>("watchdog-fixed", (e) => store.onWatchdogFixed(e.payload)),
+        await listen("watchdog-failed", () => store.onWatchdogFailed()),
+        await listen<import("./lib/types").ListsReport>("lists-updated", (e) => store.onListsUpdated(e.payload)),
       );
     })();
     return () => {
@@ -77,7 +84,7 @@
     <div class="brand-logo" style="width:64px;height:64px;font-size:32px;border-radius:20px">M</div>
     <div>
       <div style="font-weight:650;font-size:18px">Manka</div>
-      <div class="dim small">Загружаю настройки…</div>
+      <div class="dim small">{t("app.loading")}</div>
     </div>
   </div>
 {:else}
@@ -97,7 +104,7 @@
             <span class="icon"><Icon name={item.icon} /></span>
             <span>{item.label}</span>
             {#if item.id === "settings" && store.appUpdate}
-              <span class="nav-dot" title={`Доступно обновление ${store.appUpdate.version}`}></span>
+              <span class="nav-dot" title={t("app.updateAvailable", { version: store.appUpdate.version })}></span>
             {/if}
           </button>
         {/each}
@@ -106,13 +113,15 @@
       <div class="sidebar-foot">
         <div class="sidebar-status">
           <span class="dot" class:ok={store.engineRunning} class:warn={!store.engineRunning && store.settings?.enabled}></span>
-          <span class="text">{store.engineRunning ? "Обход работает" : "Обход выключен"}</span>
+          <span class="text">{store.engineRunning ? t("app.bypassOn") : t("app.bypassOff")}</span>
         </div>
         <div class="sidebar-status">
           <span class="dot" class:ok={store.data?.proxy.running}></span>
-          <span class="text">{store.data?.proxy.running ? `Прокси :${store.settings?.tgws_port}` : "Прокси выключен"}</span>
+          <span class="text">
+            {store.data?.proxy.running ? t("app.proxyPort", { port: store.settings?.tgws_port ?? "" }) : t("app.proxyOff")}
+          </span>
         </div>
-        <div class="text">v{store.data?.version} · {store.elevated ? "администратор" : "обычный режим"}</div>
+        <div class="text">v{store.data?.version} · {store.elevated ? t("app.admin") : t("app.user")}</div>
       </div>
     </aside>
 
@@ -120,11 +129,9 @@
       {#if !store.elevated}
         <div class="banner" style="max-width:1000px;margin:0 auto 14px">
           <Icon name="shield" size={20} />
-          <span class="grow">
-            Manka запущена без прав администратора: WinDivert не загрузится, и обход не сможет работать.
-          </span>
+          <span class="grow">{t("app.noAdmin")}</span>
           <button class="btn small primary" onclick={relaunch} disabled={relaunching}>
-            {relaunching ? "Перезапуск…" : "Перезапустить от администратора"}
+            {relaunching ? t("app.relaunching") : t("app.relaunchAdmin")}
           </button>
         </div>
       {/if}
@@ -133,14 +140,16 @@
         <div class="banner update" style="max-width:1000px;margin:0 auto 14px">
           <Icon name="download" size={20} />
           <span class="grow">
-            Доступна новая версия Manka <b>{store.appUpdate.version}</b>
-            {#if store.appUpdate.date} от {new Date(store.appUpdate.date).toLocaleDateString("ru-RU")}{/if}.
+            {t("app.updateBanner")} <b>{store.appUpdate.version}</b>
+            {#if store.appUpdate.date}
+              {t("app.updateFrom", { date: new Date(store.appUpdate.date).toLocaleDateString(locale()) })}.
+            {/if}
           </span>
           <button class="btn small ghost" onclick={() => (store.screen = "settings")}>
-            Что нового
+            {t("app.whatsNew")}
           </button>
           <button class="btn small primary" onclick={() => store.installAppUpdate()} disabled={store.appUpdateInstalling}>
-            {store.appUpdateInstalling ? "Обновляю…" : "Обновить"}
+            {store.appUpdateInstalling ? t("app.updating") : t("app.update")}
           </button>
         </div>
       {/if}
@@ -155,6 +164,8 @@
         <Components />
       {:else if store.screen === "telegram"}
         <Telegram />
+      {:else if store.screen === "doctor"}
+        <Doctor />
       {:else if store.screen === "settings"}
         <SettingsScreen />
       {:else if store.screen === "logs"}

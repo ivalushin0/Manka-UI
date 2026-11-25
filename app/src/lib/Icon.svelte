@@ -47,6 +47,10 @@
     <rect x="3" y="4" width="18" height="16" rx="3" />
     <path d="m7 9 3 3-3 3" />
     <path d="M13 15h4" />
+  {:else if name === "stethoscope"}
+    <path d="M4.5 3H4a1 1 0 0 0-1 1v5a5 5 0 0 0 10 0V4a1 1 0 0 0-1-1h-.5" />
+    <path d="M8 14v1a5 5 0 0 0 10 0v-2" />
+    <circle cx="18" cy="10" r="2.5" />
   {:else if name === "power"}
     <path d="M12 3v9" />
     <path d="M6.3 6.3a8 8 0 1 0 11.4 0" />

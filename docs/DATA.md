@@ -1,7 +1,11 @@
 # Форматы данных Manka для Windows
 
-Все файлы — UTF-8 JSON. Записи атомарные: временный файл рядом с целевым, затем rename.
+Все файлы — UTF-8 JSON. Записи атомарные: временный файл рядом с целевым, затем
+`MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` — крах посреди
+записи не оставляет ни обрезанный, ни пропавший файл.
 Корень данных — `%LOCALAPPDATA%\MankaData` (переопределяется `MANKA_DATA_DIR`).
+Повреждённый `settings.json` не затирается молча: копия сохраняется рядом как
+`settings.corrupt-ГГГГММДД-ЧЧММСС.json`, событие пишется в `logs\app.log`.
 
 ## settings.json
 
@@ -15,6 +19,7 @@
   "fake_sni": "www.google.com",
   "block_quic": true,
   "autostart": false,
+  "start_minimized": true,            // запуск сразу в трей
   "close_to_tray": true,
   "debug_logs": false,
 
@@ -38,7 +43,23 @@
 
   "last_check": 0,
   "last_check_rate": -1,
-  "update_interval_hours": 6,
+
+  "update_interval_hours": 6,         // как часто проверять обновления компонентов
+  "last_update_check": 0,
+  "update_repo": "ivalushin0/Manka-UI", // репозиторий самообновления (owner/repo)
+  "auto_update_check": true,
+  "app_update_interval_hours": 24,
+  "last_app_update_check": 0,
+
+  "watchdog_enabled": true,           // сторож: перепроверка стратегии в фоне
+  "watchdog_interval_min": 15,        // период проверки, минут
+  "last_watchdog_check": 0,
+
+  "lists_auto_update": false,         // автообновление внешних списков доменов
+  "lists_update_interval_hours": 24,
+  "lists_sources": [],                // свои URL (https) дополнительных списков
+  "last_lists_update": 0,
+
   "language": "ru",
   "theme": "dark"
 }
@@ -51,7 +72,7 @@
 ```jsonc
 [
   {
-    "id": "auto-1a2b3c4d5e6f7788",
+    "id": "auto-zapret2-1a2b3c4d5e6f7788",  // id включает движок: один шаблон может быть и для zapret, и для zapret2
     "engine": "zapret2",
     "name": "Zapret2 · FAKE TLS AUTO",
     "source": "auto",                 // builtin | store | user | auto | catalog

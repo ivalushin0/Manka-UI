@@ -6,6 +6,7 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { cleanMarkdown, fmtTime } from "../lib/utils";
+  import { plural, t } from "../lib/i18n.svelte";
   import type { ComponentStatus, StoreItem } from "../lib/types";
 
   onMount(() => {
@@ -70,33 +71,25 @@
     Object.values(store.progress).find((p) => p.id !== "zapret" && p.id !== "tgws") ?? null,
   );
 
-  function plural(n: number, one: string, few: string, many: string): string {
-    const m10 = n % 10;
-    const m100 = n % 100;
-    if (m10 === 1 && m100 !== 11) return `${n} ${one}`;
-    if (m10 >= 2 && m10 <= 4 && (m100 < 12 || m100 > 14)) return `${n} ${few}`;
-    return `${n} ${many}`;
-  }
-
   function version(v: string | null | undefined): string {
     if (!v) return "—";
     return `v${v.replace(/^v/i, "")}`;
   }
 
   function installedLabel(v: string | null | undefined): string {
-    if (!v) return "установлен";
-    return v.toLowerCase() === "installed" ? "установлен" : `установлен ${v}`;
+    if (!v) return t("common.installed");
+    return v.toLowerCase() === "installed" ? t("common.installed") : t("components.installedVersion", { version: v });
   }
 
   function checkLabel(c: ComponentStatus): string {
-    if (!c.installed) return "не установлен";
-    if (c.update_available) return `есть ${c.latest ?? "новее"}`;
-    return store.componentsCheckedAt ? "актуально" : "не проверено";
+    if (!c.installed) return t("components.notInstalled");
+    if (c.update_available) return t("components.updateAvailable", { version: c.latest ?? t("components.newer") });
+    return store.componentsCheckedAt ? t("components.upToDate") : t("components.notChecked");
   }
 
   function note(c: ComponentStatus): string {
     if (c.id === "tgws") {
-      return `MTProto-прокси без трея, 127.0.0.1:${store.settings?.tgws_port ?? 1443}`;
+      return t("components.tgwsNote", { port: store.settings?.tgws_port ?? 1443 });
     }
     return c.note ?? "";
   }
@@ -126,7 +119,7 @@
   }
 </script>
 
-{#snippet componentCard(c)}
+{#snippet componentCard(c: ComponentStatus)}
   {@const p = progressFor(c.id)}
   <div class="card comp" class:installed={c.installed} class:available={!c.installed}>
     <div class="card-title">
@@ -138,7 +131,7 @@
         <div class="small dim" style="font-weight:400">{note(c)}</div>
       </div>
       <span class="badge" class:ok={c.installed} class:muted={!c.installed}>
-        {c.installed ? version(c.version) : "не установлен"}
+        {c.installed ? version(c.version) : t("components.notInstalled")}
       </span>
     </div>
     {#if c.installed}
@@ -158,27 +151,27 @@
     {#if c.update_available}
       <div class="banner" style="padding:8px 11px;margin-bottom:10px">
         <Icon name="download" size={15} />
-        <span class="grow small">Доступно обновление {c.latest}</span>
+        <span class="grow small">{t("components.updateBanner", { version: c.latest ?? "" })}</span>
       </div>
     {/if}
 
     <div class="row">
       {#if !c.installed}
         <button class="btn primary" onclick={() => store.installComponent(c.id)} disabled={store.busy || !!p}>
-          <Icon name="download" size={15} /> Установить
+          <Icon name="download" size={15} /> {t("common.install")}
         </button>
       {:else if c.update_available}
         <button class="btn primary" onclick={() => store.updateComponent(c.id)} disabled={store.busy || !!p}>
-          <Icon name="refresh" size={15} /> Обновить до {c.latest}
+          <Icon name="refresh" size={15} /> {t("components.updateTo", { version: c.latest ?? "" })}
         </button>
       {:else}
         <button class="btn small ghost" onclick={() => store.updateComponent(c.id)} disabled={store.busy || !!p}>
-          <Icon name="refresh" size={14} /> Переустановить
+          <Icon name="refresh" size={14} /> {t("common.reinstall")}
         </button>
       {/if}
-      <button class="btn small ghost" onclick={() => (componentDetail = c)}>Подробнее</button>
-      {#if c.id === "zapret" && c.installed}
-        <button class="btn small ghost" onclick={() => store.rollbackZapret()} disabled={store.busy}>Откатить</button>
+      <button class="btn small ghost" onclick={() => (componentDetail = c)}>{t("components.details")}</button>
+      {#if (c.id === "zapret" || c.id === "tgws") && c.installed}
+        <button class="btn small ghost" onclick={() => store.rollbackComponent(c.id)} disabled={store.busy}>{t("common.rollback")}</button>
       {/if}
     </div>
   </div>
@@ -187,22 +180,22 @@
 <div class="page">
   <div class="page-head">
     <div>
-      <div class="page-title">Компоненты</div>
-      <div class="page-sub">Движки, Telegram-прокси и наборы стратегий из магазина CDPI</div>
+      <div class="page-title">{t("nav.components")}</div>
+      <div class="page-sub">{t("components.subtitle")}</div>
     </div>
     <div class="row">
       {#if store.componentsChecking}
-        <span class="small dim">Проверяю обновления…</span>
+        <span class="small dim">{t("components.checkingUpdates")}</span>
       {:else if store.componentsCheckedAt}
-        <span class="small dim">Проверено {fmtTime(store.componentsCheckedAt)}</span>
+        <span class="small dim">{t("components.checkedAt", { time: fmtTime(store.componentsCheckedAt) })}</span>
       {/if}
       <button class="btn small" onclick={() => store.checkUpdates()} disabled={store.componentsChecking}>
-        <Icon name="refresh" size={14} /> {store.componentsChecking ? "Проверяю…" : "Проверить обновления"}
+        <Icon name="refresh" size={14} /> {store.componentsChecking ? t("common.checking") : t("components.checkUpdates")}
       </button>
     </div>
   </div>
 
-  <div class="section-label">Установленные движки DPI</div>
+  <div class="section-label">{t("engines.installed")}</div>
   {#if installedDpi.length}
     <div class="grid-2">
       {#each installedDpi as c (c.id)}
@@ -211,12 +204,12 @@
     </div>
   {:else}
     <div class="empty">
-      Движок DPI не установлен. Выберите доступный движок ниже и нажмите «Установить».
+      {t("components.noEngineEmpty")}
     </div>
   {/if}
 
   {#if availableDpi.length}
-    <div class="section-label">Доступные для установки</div>
+    <div class="section-label">{t("components.available")}</div>
     <div class="grid-2">
       {#each availableDpi as c (c.id)}
         {@render componentCard(c)}
@@ -224,7 +217,7 @@
     </div>
   {/if}
 
-  <div class="section-label">Telegram-прокси</div>
+  <div class="section-label">{t("engines.tgProxy")}</div>
   <div class="grid-2">
     {#each proxyComponents as c (c.id)}
       {@render componentCard(c)}
@@ -233,36 +226,35 @@
 
   <div class="card">
     <div class="card-title">
-      <Icon name="package" size={18} /> Магазин CDPI
+      <Icon name="package" size={18} /> {t("components.store")}
       <span class="badge muted">
-        {plural(counts.all, "набор", "набора", "наборов")} · установлено {counts.installed}
+        {plural(counts.all, "components.sets")} · {t("components.installedCount", { count: counts.installed })}
       </span>
       <button class="btn small ghost" style="margin-left:auto" onclick={() => store.refreshStore()} disabled={store.storeLoading}>
-        {store.storeLoading ? "Обновляю…" : "Обновить каталог"}
+        {store.storeLoading ? t("components.refreshing") : t("components.refreshCatalog")}
       </button>
     </div>
 
     <div class="store-toolbar">
       <div class="tabs">
-        <button class:on={kind === "all"} onclick={() => (kind = "all")}>Все <span class="dim">{counts.all}</span></button>
+        <button class:on={kind === "all"} onclick={() => (kind = "all")}>{t("common.all")} <span class="dim">{counts.all}</span></button>
         <button class:on={kind === "configlist"} onclick={() => (kind = "configlist")}>
-          Наборы <span class="dim">{counts.configlist}</span>
+          {t("components.setsTab")} <span class="dim">{counts.configlist}</span>
         </button>
         <button class:on={kind === "lsubscription"} onclick={() => (kind = "lsubscription")}>
-          Списки <span class="dim">{counts.lsubscription}</span>
+          {t("components.lists")} <span class="dim">{counts.lsubscription}</span>
         </button>
       </div>
       <div class="search grow">
         <Icon name="search" size={15} />
-        <input type="text" placeholder="Поиск по названию, автору, описанию…" bind:value={query} />
+        <input type="text" placeholder={t("components.searchPh")} bind:value={query} />
       </div>
       <span class="badge muted">{filtered.length}</span>
     </div>
 
     {#if unsupported.length}
       <div class="small dim" style="margin:-4px 0 10px;line-height:1.5">
-        Движки из каталога CDPI (ByeDPI, GoodbyeDPI, NoDPI, SpoofDPI) Manka пока не поддерживает — они
-        показаны ниже только для справки. Zapret 2 и TG WS Proxy управляются выше.
+        {t("components.unsupportedNote")}
       </div>
     {/if}
 
@@ -275,13 +267,13 @@
     {/if}
 
     {#if store.storeLoading && !storeItems.length}
-      <div class="empty">Загружаю каталог магазина…</div>
+      <div class="empty">{t("components.loadingStore")}</div>
     {:else if !storeItems.length}
       <div class="empty">
-        Каталог пуст. Проверьте подключение к интернету и нажмите «Обновить каталог».
+        {t("components.emptyStore")}
       </div>
     {:else if !filtered.length}
-      <div class="empty">Ничего не найдено по запросу «{query}».</div>
+      <div class="empty">{t("common.nothingFound", { query })}</div>
     {:else}
       <div class="list">
         {#each filtered as item (item.store_id)}
@@ -291,7 +283,7 @@
               <div class="row">
                 <span class="name">{short}</span>
                 {#if item.kind === "lsubscription"}
-                  <span class="badge muted">список</span>
+                  <span class="badge muted">{t("components.listBadge")}</span>
                 {/if}
                 <span class="badge muted">{item.developer || "CDPI"}</span>
                 {#if item.installed_version}
@@ -307,13 +299,13 @@
             </div>
             <div class="row store-actions" style="flex:none">
               <button class="btn small ghost" onclick={() => (detail = item)}>
-                Подробнее
+                {t("components.details")}
               </button>
               <button class="btn small primary" onclick={() => store.installStoreItem(item.store_id)} disabled={store.busy}>
-                {item.installed_version ? "Переустановить" : "Установить"}
+                {item.installed_version ? t("common.reinstall") : t("common.install")}
               </button>
               {#if item.installed_version}
-                <button class="btn small danger" onclick={() => store.removeStoreItem(item.store_id)} disabled={store.busy} title="Удалить">
+                <button class="btn small danger" onclick={() => store.removeStoreItem(item.store_id)} disabled={store.busy} title={t("common.delete")}>
                   <Icon name="trash" size={14} />
                 </button>
               {/if}
@@ -327,12 +319,11 @@
   {#if unsupported.length}
     <div class="card">
       <div class="card-title">
-        <Icon name="package" size={17} /> Другие движки CDPI
+        <Icon name="package" size={17} /> {t("components.otherEngines")}
         <span class="badge muted">{unsupported.length}</span>
       </div>
       <div class="small dim" style="margin-bottom:10px;line-height:1.5">
-        Эти компоненты есть в каталоге CDPI, но Manka пока не умеет их запускать. Управляемые движки —
-        Zapret 2 и Telegram-прокси выше.
+        {t("components.otherNote")}
       </div>
       <div class="list">
         {#each unsupported as item (item.store_id)}
@@ -341,8 +332,8 @@
               <div class="name">{item.short_name || item.name}</div>
               <div class="sub">{item.developer || "CDPI"}</div>
             </div>
-            <span class="badge muted">не поддерживается</span>
-            <button class="btn small ghost" onclick={() => (detail = item)}>Подробнее</button>
+            <span class="badge muted">{t("components.unsupported")}</span>
+            <button class="btn small ghost" onclick={() => (detail = item)}>{t("components.details")}</button>
           </div>
         {/each}
       </div>
@@ -351,7 +342,7 @@
 
   {#if store.data?.kits?.length}
     <div class="card">
-      <div class="card-title"><Icon name="layers" size={17} /> Установленные наборы</div>
+      <div class="card-title"><Icon name="layers" size={17} /> {t("components.installedKits")}</div>
       <div class="list">
         {#each store.data!.kits as kit (kit.id)}
           <div class="list-item">
@@ -368,43 +359,44 @@
 </div>
 
 {#if componentDetail}
+  {@const comp = componentDetail}
   <Modal
-    title={componentDetail.name}
-    subtitle={componentDetail.installed ? `Установлен ${version(componentDetail.version)}` : "Компонент не установлен"}
+    title={comp.name}
+    subtitle={comp.installed ? t("components.installedSubtitle", { version: version(comp.version) }) : t("components.notInstalledSubtitle")}
     onclose={() => (componentDetail = null)}
   >
     <div class="kv" style="margin-bottom:16px">
-      <span class="k">Состояние</span>
+      <span class="k">{t("components.state")}</span>
       <span>
-        {#if componentDetail.installed}
-          <span class="badge ok">установлен</span>
+        {#if comp.installed}
+          <span class="badge ok">{t("common.installed")}</span>
         {:else}
-          <span class="badge muted">не установлен</span>
+          <span class="badge muted">{t("components.notInstalled")}</span>
         {/if}
-        {#if componentDetail.update_available}
-          <span class="badge warn" style="margin-left:6px">доступно {componentDetail.latest}</span>
+        {#if comp.update_available}
+          <span class="badge warn" style="margin-left:6px">{t("components.availableBadge", { version: comp.latest ?? "" })}</span>
         {/if}
       </span>
-      {#if note(componentDetail)}
-        <span class="k">Описание</span><span class="small muted">{note(componentDetail)}</span>
+      {#if note(comp)}
+        <span class="k">{t("components.description")}</span><span class="small muted">{note(comp)}</span>
       {/if}
-      {#if componentDetail.path}
-        <span class="k">Путь</span>
-        <span class="mono wrap small">{componentDetail.path}</span>
+      {#if comp.path}
+        <span class="k">{t("components.path")}</span>
+        <span class="mono wrap small">{comp.path}</span>
       {/if}
     </div>
     <div class="row" style="justify-content:flex-end">
-      {#if !componentDetail.installed}
-        <button class="btn primary" onclick={() => updateComponent(componentDetail.id)} disabled={store.busy}>
-          <Icon name="download" size={15} /> Установить
+      {#if !comp.installed}
+        <button class="btn primary" onclick={() => updateComponent(comp.id)} disabled={store.busy}>
+          <Icon name="download" size={15} /> {t("common.install")}
         </button>
       {:else}
-        <button class="btn" onclick={() => updateComponent(componentDetail.id)} disabled={store.busy}>
-          <Icon name="refresh" size={15} /> {componentDetail.update_available ? "Обновить" : "Переустановить"}
+        <button class="btn" onclick={() => updateComponent(comp.id)} disabled={store.busy}>
+          <Icon name="refresh" size={15} /> {comp.update_available ? t("common.update") : t("common.reinstall")}
         </button>
       {/if}
-      {#if componentDetail.id === "zapret" && componentDetail.installed}
-        <button class="btn ghost" onclick={() => store.rollbackZapret()} disabled={store.busy}>Откатить</button>
+      {#if (comp.id === "zapret" || comp.id === "tgws") && comp.installed}
+        <button class="btn ghost" onclick={() => store.rollbackComponent(comp.id)} disabled={store.busy}>{t("common.rollback")}</button>
       {/if}
     </div>
   </Modal>
@@ -413,24 +405,24 @@
 {#if detail}
   <Modal
     title={detail.short_name || detail.name}
-    subtitle={`${detail.developer || "CDPI"} · ${detail.kind === "lsubscription" ? "список доменов" : "набор стратегий"}`}
+    subtitle={`${detail.developer || "CDPI"} · ${detail.kind === "lsubscription" ? t("components.kindList") : t("components.kindSet")}`}
     wide
     onclose={() => (detail = null)}
   >
     <div class="row" style="margin-bottom:12px">
       {#if detail.kind === "component"}
-        <span class="badge muted">не поддерживается Manka</span>
+        <span class="badge muted">{t("components.unsupportedByManka")}</span>
       {:else if detail.installed_version}
         <span class="badge ok">{installedLabel(detail.installed_version)}</span>
       {:else}
-        <span class="badge muted">не установлен</span>
+        <span class="badge muted">{t("components.notInstalled")}</span>
       {/if}
       {#if detail.version_control}
         <span class="badge muted">{detail.version_control}</span>
       {/if}
       {#if detail.link}
         <button class="btn small ghost" onclick={() => detail && api.openUrl(detail.link)}>
-          <Icon name="external" size={14} /> Источник
+          <Icon name="external" size={14} /> {t("components.source")}
         </button>
       {/if}
     </div>
@@ -446,21 +438,21 @@
       {#if detail.description}
         <Markdown text={detail.description} />
       {:else}
-        <div class="empty">Описание не указано.</div>
+        <div class="empty">{t("components.noDescription")}</div>
       {/if}
     </div>
 
     <div class="row" style="justify-content:flex-end;margin-top:16px">
       {#if detail.kind === "component"}
-        <button class="btn" onclick={() => (detail = null)}>Закрыть</button>
+        <button class="btn" onclick={() => (detail = null)}>{t("common.close")}</button>
       {:else}
         {#if detail.installed_version}
           <button class="btn danger" onclick={() => removeItem(detail!)} disabled={store.busy}>
-            <Icon name="trash" size={14} /> Удалить
+            <Icon name="trash" size={14} /> {t("common.delete")}
           </button>
         {/if}
         <button class="btn primary" onclick={() => installItem(detail!)} disabled={store.busy}>
-          <Icon name="download" size={15} /> {detail.installed_version ? "Переустановить" : "Установить"}
+          <Icon name="download" size={15} /> {detail.installed_version ? t("common.reinstall") : t("common.install")}
         </button>
       {/if}
     </div>
@@ -524,6 +516,7 @@
     line-height: 1.5;
     display: -webkit-box;
     -webkit-line-clamp: 2;
+    line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
   }

@@ -5,6 +5,7 @@
   import { store } from "../lib/store.svelte";
   import { api } from "../lib/api";
   import { copyText, fmtBytes } from "../lib/utils";
+  import { locale, t } from "../lib/i18n.svelte";
   import type { LogInfo } from "../lib/types";
 
   type LogName = "engine" | "tgws" | "app";
@@ -19,11 +20,11 @@
 
   const cache = new Map<LogName, { lines: string[]; info: LogInfo | null }>();
 
-  const tabs: { id: LogName; title: string; hint: string }[] = [
-    { id: "app", title: "Приложение", hint: "События Manka" },
-    { id: "engine", title: "Движок", hint: "winws / winws2" },
+  const tabs = $derived<{ id: LogName; title: string; hint: string }[]>([
+    { id: "app", title: t("logs.tabApp"), hint: t("logs.hintApp") },
+    { id: "engine", title: t("logs.tabEngine"), hint: "winws / winws2" },
     { id: "tgws", title: "Telegram", hint: "tg-ws-proxy" },
-  ];
+  ]);
 
   let name = $state<LogName>("app");
   let lines = $state<string[]>([]);
@@ -153,7 +154,7 @@
       cache.delete(name);
       lines = [];
       info = await api.logInfo(name);
-      store.notify("Журнал очищен");
+      store.notify(t("logs.cleared"));
     } catch (e) {
       store.fail(e);
     }
@@ -194,23 +195,23 @@
 
   async function copyVisible() {
     const text = filtered.map((e) => (e.ts ? `${e.ts} ${e.text}` : e.text)).join("\n");
-    if (await copyText(text)) store.notify("Журнал скопирован");
-    else store.fail("Не удалось скопировать журнал");
+    if (await copyText(text)) store.notify(t("logs.copied"));
+    else store.fail(t("logs.copyFailed"));
   }
 </script>
 
 <div class="page">
   <div class="page-head">
     <div>
-      <div class="page-title">Журнал</div>
-      <div class="page-sub">События приложения, движка и Telegram-прокси — с уровнями и поиском</div>
+      <div class="page-title">{t("nav.logs")}</div>
+      <div class="page-sub">{t("logs.subtitle")}</div>
     </div>
     <div class="row">
       <button class="btn small" onclick={() => load(true)} disabled={loading}>
-        <Icon name="refresh" size={14} /> {loading ? "Читаю…" : "Обновить"}
+        <Icon name="refresh" size={14} /> {loading ? t("logs.reading") : t("common.refresh")}
       </button>
       <button class="btn small ghost" onclick={() => api.openLogsDir()}>
-        <Icon name="external" size={14} /> Папка логов
+        <Icon name="external" size={14} /> {t("logs.folder")}
       </button>
     </div>
   </div>
@@ -231,38 +232,38 @@
 
       <div class="search grow">
         <Icon name="search" size={15} />
-        <input type="text" placeholder="Поиск по журналу…" bind:value={query} />
+        <input type="text" placeholder={t("logs.searchPh")} bind:value={query} />
       </div>
 
       <div class="row nowrap">
         <span class="badge muted mono">{fmtBytes(info?.size ?? 0)}</span>
-        <span class="badge muted">{filtered.length} стр.</span>
+        <span class="badge muted">{t("logs.lines", { count: filtered.length })}</span>
       </div>
     </div>
 
     <div class="log-controls">
       <div class="row">
         <button class="chip" class:on={level === "all"} onclick={() => (level = "all")}>
-          Все <span class="dim">{counts.error + counts.warn + counts.info + counts.other}</span>
+          {t("common.all")} <span class="dim">{counts.error + counts.warn + counts.info + counts.other}</span>
         </button>
         <button class="chip" class:on={level === "error"} onclick={() => (level = "error")}>
-          <span class="dot bad"></span> Ошибки <span class="dim">{counts.error}</span>
+          <span class="dot bad"></span> {t("logs.errors")} <span class="dim">{counts.error}</span>
         </button>
         <button class="chip" class:on={level === "warn"} onclick={() => (level = "warn")}>
-          <span class="dot warn"></span> Предупреждения <span class="dim">{counts.warn}</span>
+          <span class="dot warn"></span> {t("logs.warnings")} <span class="dim">{counts.warn}</span>
         </button>
         <button class="chip" class:on={level === "info"} onclick={() => (level = "info")}>
-          <span class="dot ok"></span> События <span class="dim">{counts.info}</span>
+          <span class="dot ok"></span> {t("logs.events")} <span class="dim">{counts.info}</span>
         </button>
       </div>
 
       <div class="row">
-        <label class="check small"><input type="checkbox" bind:checked={auto} /> Следить</label>
-        <label class="check small"><input type="checkbox" bind:checked={wrap} /> Перенос</label>
+        <label class="check small"><input type="checkbox" bind:checked={auto} /> {t("logs.follow")}</label>
+        <label class="check small"><input type="checkbox" bind:checked={wrap} /> {t("logs.wrap")}</label>
         <button class="btn small ghost" onclick={() => copyVisible()}>
-          <Icon name="copy" size={14} /> Копировать
+          <Icon name="copy" size={14} /> {t("common.copy")}
         </button>
-        <button class="btn small danger" onclick={() => (confirmClear = true)} title="Очистить журнал">
+        <button class="btn small danger" onclick={() => (confirmClear = true)} title={t("logs.clearTitle")}>
           <Icon name="trash" size={14} />
         </button>
       </div>
@@ -279,9 +280,9 @@
       {#if filtered.length === 0}
         <div class="log-empty">
           {#if lines.length === 0}
-            Журнал пуст. Движок и прокси пишут сюда во время работы.
+            {t("logs.empty")}
           {:else}
-            Ничего не найдено по фильтру.
+            {t("logs.noMatch")}
           {/if}
         </div>
       {:else}
@@ -291,11 +292,11 @@
             {#if e.ts}<span class="ts">{e.ts}</span>{:else}<span class="ts">·</span>{/if}
             <span class="msg">
               {#if e.text.length > 320 && !expanded.has(e.i)}
-                {e.text.slice(0, 320)}<button class="more" onclick={() => toggleExpand(e.i)}>показать целиком</button>
+                {e.text.slice(0, 320)}<button class="more" onclick={() => toggleExpand(e.i)}>{t("logs.showFull")}</button>
               {:else}
                 {e.text}
                 {#if e.text.length > 320}
-                  <button class="more" onclick={() => toggleExpand(e.i)}>свернуть</button>
+                  <button class="more" onclick={() => toggleExpand(e.i)}>{t("logs.collapse")}</button>
                 {/if}
               {/if}
             </span>
@@ -307,20 +308,20 @@
     <div class="log-foot">
       <div class="row small dim">
         {#if info?.modified}
-          <span>Обновлён {new Date(info.modified).toLocaleTimeString("ru-RU")}</span>
+          <span>{t("logs.updated", { time: new Date(info.modified).toLocaleTimeString(locale()) })}</span>
         {/if}
-        <span>· загружено {lines.length}</span>
-        {#if filterActive()}<span>· фильтр: {filtered.length}</span>{/if}
+        <span>{t("logs.loaded", { count: lines.length })}</span>
+        {#if filterActive()}<span>{t("logs.filtered", { count: filtered.length })}</span>{/if}
       </div>
       <div class="row">
         {#if lines.length >= limit && limit < 2000}
-          <button class="btn small ghost" onclick={showMore}>Показать больше</button>
+          <button class="btn small ghost" onclick={showMore}>{t("logs.showMore")}</button>
         {/if}
         {#if followMode}
-          <span class="badge ok"><span class="dot ok"></span> автоскролл</span>
+          <span class="badge ok"><span class="dot ok"></span> {t("logs.autoscroll")}</span>
         {:else if auto}
           <button class="btn small ghost" onclick={() => { follow = true; scrollDown(true); }}>
-            Вниз
+            {t("logs.down")}
           </button>
         {/if}
       </div>
@@ -330,14 +331,14 @@
 
 {#if confirmClear}
   <Modal
-    title="Очистить журнал?"
-    subtitle="Файл журнала будет очищен. Это не влияет на работу обхода."
+    title={t("logs.clearModalTitle")}
+    subtitle={t("logs.clearModalText")}
     onclose={() => (confirmClear = false)}
   >
     <div class="row" style="justify-content:flex-end">
-      <button class="btn" onclick={() => (confirmClear = false)}>Отмена</button>
+      <button class="btn" onclick={() => (confirmClear = false)}>{t("common.cancel")}</button>
       <button class="btn danger" onclick={clearLog}>
-        <Icon name="trash" size={14} /> Очистить
+        <Icon name="trash" size={14} /> {t("logs.clear")}
       </button>
     </div>
   </Modal>

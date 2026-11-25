@@ -57,13 +57,11 @@ impl AutoState {
     pub fn sorted(&self) -> Vec<&CandidateResult> {
         let mut v: Vec<&CandidateResult> = self.results.iter().collect();
         v.sort_by(|a, b| {
-            b.percent
-                .cmp(&a.percent)
-                .then_with(|| {
-                    let am = if a.avg_ms == 0 { u64::MAX } else { a.avg_ms };
-                    let bm = if b.avg_ms == 0 { u64::MAX } else { b.avg_ms };
-                    am.cmp(&bm)
-                })
+            b.percent.cmp(&a.percent).then_with(|| {
+                let am = if a.avg_ms == 0 { u64::MAX } else { a.avg_ms };
+                let bm = if b.avg_ms == 0 { u64::MAX } else { b.avg_ms };
+                am.cmp(&bm)
+            })
         });
         v
     }
@@ -87,7 +85,11 @@ impl AutoState {
     }
 }
 
-fn candidates(strategies: &[Strategy], settings: &Settings, request: &AutoRequest) -> Vec<Strategy> {
+fn candidates(
+    strategies: &[Strategy],
+    settings: &Settings,
+    request: &AutoRequest,
+) -> Vec<Strategy> {
     let mut out: Vec<Strategy> = Vec::new();
     for engine in &request.engines {
         let active = settings.active_strategy(*engine).and_then(|id| {
@@ -134,7 +136,13 @@ fn render_args(
 ) -> Result<crate::args::Rendered, String> {
     let kit = strategy.kit_id.as_ref().map(|id| paths.kit(id));
     let engine_dir = paths.engine_dir();
-    crate::args::render(strategy, settings, paths, engine_dir.as_deref(), kit.as_deref())
+    crate::args::render(
+        strategy,
+        settings,
+        paths,
+        engine_dir.as_deref(),
+        kit.as_deref(),
+    )
 }
 
 fn tail(path: &std::path::Path, n: usize) -> String {
@@ -191,7 +199,8 @@ where
     progress(&state);
 
     let mut perfect: std::collections::BTreeMap<Engine, u32> = std::collections::BTreeMap::new();
-    let mut start_failures: std::collections::BTreeMap<Engine, u32> = std::collections::BTreeMap::new();
+    let mut start_failures: std::collections::BTreeMap<Engine, u32> =
+        std::collections::BTreeMap::new();
 
     for (idx, candidate) in list.iter().enumerate() {
         if cancel.load(Ordering::Relaxed) {
@@ -240,7 +249,12 @@ where
 
         let started = Instant::now();
         let start = processes
-            .start_engine(&exe, &rendered.args, rendered.working_dir.as_deref(), &engine_log)
+            .start_engine(
+                &exe,
+                &rendered.args,
+                rendered.working_dir.as_deref(),
+                &engine_log,
+            )
             .await;
         if let Err(e) = start {
             state.results.push(CandidateResult {
@@ -256,7 +270,11 @@ where
             continue;
         }
 
-        let settle = if candidate.source == Source::Store { 1600 } else { 800 };
+        let settle = if candidate.source == Source::Store {
+            1600
+        } else {
+            800
+        };
         tokio::time::sleep(Duration::from_millis(settle)).await;
         let status = processes.engine_status(&engine_log).await;
         if !status.running {

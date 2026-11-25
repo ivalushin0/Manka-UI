@@ -7,7 +7,52 @@ pub fn now_ms() -> i64 {
     chrono::Utc::now().timestamp_millis()
 }
 
+/// Atomically write a file: write to a sibling temp file, then replace the
+/// destination in one system call. On Windows this uses
+/// `MoveFileExW(MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)`, so a
+/// crash mid-write can never leave a half-written or missing settings file.
+#[cfg(windows)]
+pub fn atomic_write(path: &Path, data: &[u8]) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::{
+        MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
+    };
+
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+    let tmp = path.with_extension(format!(
+        "{}.tmp",
+        path.extension().and_then(|e| e.to_str()).unwrap_or("")
+    ));
+    fs::write(&tmp, data)?;
+    let from: Vec<u16> = tmp
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let to: Vec<u16> = path
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
+    let ok = unsafe {
+        MoveFileExW(
+            from.as_ptr(),
+            to.as_ptr(),
+            MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH,
+        )
+    };
+    if ok == 0 {
+        let err = io::Error::last_os_error();
+        let _ = fs::remove_file(&tmp);
+        return Err(err);
+    }
+    Ok(())
+}
+
 /// Atomically write a file: write to a sibling temp file, then rename.
+#[cfg(not(windows))]
 pub fn atomic_write(path: &Path, data: &[u8]) -> io::Result<()> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
@@ -17,11 +62,43 @@ pub fn atomic_write(path: &Path, data: &[u8]) -> io::Result<()> {
         path.extension().and_then(|e| e.to_str()).unwrap_or("")
     ));
     fs::write(&tmp, data)?;
-    // Windows rename fails when the destination exists.
-    if path.exists() {
-        let _ = fs::remove_file(path);
-    }
     fs::rename(&tmp, path)
+}
+
+/// SHA256 of a file as lowercase hex. Used to verify downloaded components
+/// against the digests published by GitHub and to detect tampering later.
+pub fn sha256_file(path: &Path) -> io::Result<String> {
+    use sha2::{Digest, Sha256};
+    use std::io::Read;
+
+    let mut file = fs::File::open(path)?;
+    let mut hasher = Sha256::new();
+    let mut buf = [0u8; 64 * 1024];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(hex::encode(hasher.finalize()))
+}
+
+/// Verify a downloaded file against an expected SHA256 (hex, case-insensitive,
+/// an optional `sha256:` prefix as returned by the GitHub API is accepted).
+pub fn verify_sha256(path: &Path, expected: &str) -> Result<(), String> {
+    let expected = expected.trim().trim_start_matches("sha256:").to_lowercase();
+    if expected.len() != 64 || !expected.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!("Некорректный SHA256 в источнике: {expected}"));
+    }
+    let actual = sha256_file(path).map_err(|e| format!("Не удалось прочитать файл: {e}"))?;
+    if actual != expected {
+        let _ = fs::remove_file(path);
+        return Err(format!(
+            "Контрольная сумма не совпала: ожидалась {expected}, получена {actual}. Файл удалён."
+        ));
+    }
+    Ok(())
 }
 
 pub fn read_json<T: serde::de::DeserializeOwned>(path: &Path) -> Option<T> {
@@ -75,7 +152,8 @@ pub fn trim_log(path: &Path, limit: u64) {
     }
 }
 
-pub fn append_log(path: &Path, line: &str) {    use std::io::Write;
+pub fn append_log(path: &Path, line: &str) {
+    use std::io::Write;
     if let Some(parent) = path.parent() {
         let _ = fs::create_dir_all(parent);
     }
@@ -110,6 +188,64 @@ pub fn kill_stale_components(components: &Path) -> usize {
 #[cfg(not(windows))]
 pub fn kill_stale_components(_components: &Path) -> usize {
     0
+}
+
+/// (pid, name, exe path) of running processes whose image name is in `names`.
+/// Used by the Doctor to find conflicting DPI tools.
+#[cfg(windows)]
+pub fn find_processes(names: &[&str]) -> Vec<(u32, String, String)> {
+    if names.is_empty() {
+        return Vec::new();
+    }
+    let filter = names
+        .iter()
+        .map(|n| format!("Name='{n}'"))
+        .collect::<Vec<_>>()
+        .join(" OR ");
+    let script = format!(
+        "Get-CimInstance Win32_Process -Filter \"{filter}\" | ForEach-Object {{ \"$($_.ProcessId)|$($_.Name)|$($_.ExecutablePath)\" }}"
+    );
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-WindowStyle", "Hidden", "-Command", &script])
+        .output();
+    let Ok(out) = out else { return Vec::new() };
+    String::from_utf8_lossy(&out.stdout)
+        .lines()
+        .filter_map(|line| {
+            let mut parts = line.trim().splitn(3, '|');
+            let pid: u32 = parts.next()?.parse().ok()?;
+            let name = parts.next()?.to_string();
+            let path = parts.next().unwrap_or("").to_string();
+            Some((pid, name, path))
+        })
+        .collect()
+}
+
+#[cfg(not(windows))]
+pub fn find_processes(_names: &[&str]) -> Vec<(u32, String, String)> {
+    Vec::new()
+}
+
+/// State of a Windows service (`sc query`), e.g. the WinDivert driver.
+#[cfg(windows)]
+pub fn service_state(name: &str) -> Option<String> {
+    let out = std::process::Command::new("sc")
+        .args(["query", name])
+        .output()
+        .ok()?;
+    let text = String::from_utf8_lossy(&out.stdout);
+    for line in text.lines() {
+        let line = line.trim();
+        if let Some(rest) = line.strip_prefix("STATE") {
+            return rest.split_whitespace().nth(1).map(|s| s.to_string());
+        }
+    }
+    None
+}
+
+#[cfg(not(windows))]
+pub fn service_state(_name: &str) -> Option<String> {
+    None
 }
 
 /// (pid, process name) of the process listening on `port`, if any.
@@ -165,7 +301,8 @@ fn process_name(pid: u32) -> Option<String> {
 pub fn stop_port_owner(port: u16) -> Result<String, String> {
     let (pid, name) = port_owner(port).ok_or_else(|| format!("Порт {port} свободен"))?;
     let lower = name.to_lowercase();
-    let known = lower.contains("tgws") || lower.contains("tg-ws-proxy") || lower.contains("tgwsproxy");
+    let known =
+        lower.contains("tgws") || lower.contains("tg-ws-proxy") || lower.contains("tgwsproxy");
     if !known {
         return Err(format!(
             "Порт {port} занят программой {name} (PID {pid}). Закройте её вручную или смените порт."
@@ -196,7 +333,8 @@ pub fn port_busy(port: u16) -> bool {
     .is_ok()
 }
 
-pub fn sanitize_file_name(name: &str) -> String {    name.chars()
+pub fn sanitize_file_name(name: &str) -> String {
+    name.chars()
         .map(|c| {
             if c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.' {
                 c
@@ -282,4 +420,66 @@ pub fn relaunch_elevated() -> Result<(), String> {
 #[cfg(not(windows))]
 pub fn relaunch_elevated() -> Result<(), String> {
     Err("elevation is only needed on Windows".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_write_creates_and_replaces() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("nested").join("data.json");
+        atomic_write(&file, b"one").unwrap();
+        assert_eq!(fs::read(&file).unwrap(), b"one");
+        // replacing an existing file must not fail and must not lose data
+        atomic_write(&file, b"two").unwrap();
+        assert_eq!(fs::read(&file).unwrap(), b"two");
+        // no temp files left behind
+        let leftovers: Vec<_> = fs::read_dir(file.parent().unwrap())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().ends_with(".tmp"))
+            .collect();
+        assert!(leftovers.is_empty(), "temp files left: {leftovers:?}");
+    }
+
+    #[test]
+    fn verify_sha256_accepts_and_rejects() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("blob.bin");
+        fs::write(&file, b"manka").unwrap();
+        // a digest that does not match must fail and delete the file
+        let wrong = "e5b2d34dc22cc34d9d1b44862b046e6ea6a1af7a48b641f29a3e5769cb0f5f13";
+        let actual = sha256_file(&file).unwrap();
+        assert_eq!(actual.len(), 64);
+        verify_sha256(&file, &actual).unwrap();
+        verify_sha256(&file, &format!("sha256:{actual}")).unwrap();
+        verify_sha256(&file, &actual.to_uppercase()).unwrap();
+        assert!(verify_sha256(&file, wrong).is_err());
+        // a failed verification removes the tampered file
+        assert!(!file.exists());
+        // malformed expectations are rejected without touching the file
+        fs::write(&file, b"manka").unwrap();
+        assert!(verify_sha256(&file, "zzz").is_err());
+        assert!(file.exists());
+    }
+
+    #[test]
+    fn sanitize_keeps_safe_chars() {
+        assert_eq!(sanitize_file_name("a-b_c.d"), "a-b_c.d");
+        assert_eq!(sanitize_file_name("../etc/passwd"), ".._etc_passwd");
+        assert_eq!(sanitize_file_name("a/b\\c:d"), "a_b_c_d");
+    }
+
+    #[test]
+    fn tail_lines_reads_last_n() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("log.txt");
+        let text: String = (1..=50).map(|i| format!("line{i}\n")).collect();
+        fs::write(&file, text).unwrap();
+        let tail = tail_lines(&file, 3);
+        assert_eq!(tail, vec!["line48", "line49", "line50"]);
+        assert!(tail_lines(&dir.path().join("missing.log"), 5).is_empty());
+    }
 }

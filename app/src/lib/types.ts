@@ -42,8 +42,9 @@ export interface Settings {
   fake_sni: string;
   block_quic: boolean;
   autostart: boolean;
-  minimize_to_tray: boolean;
   start_minimized: boolean;
+  /** "list" — по списку доменов; "all" — весь TLS/HTTP-трафик */
+  bypass_scope: string;
   tgws_enabled: boolean;
   tgws_port: number;
   tgws_secret: string;
@@ -62,13 +63,23 @@ export interface Settings {
   autoselect_targets: string[];
   last_check: number;
   last_check_rate: number;
+
+  watchdog_enabled: boolean;
+  watchdog_interval_min: number;
+  watchdog_auto_fix: boolean;
+  last_watchdog_check: number;
+
+  lists_auto_update: boolean;
+  lists_update_interval_hours: number;
+  /** Свои источники списков доменов, по одному URL на строку */
+  lists_sources: string;
+  last_lists_update: number;
   update_interval_hours: number;
   last_update_check: number;
   update_repo: string;
   auto_update_check: boolean;
   app_update_interval_hours: number;
   last_app_update_check: number;
-  check_components_on_start: boolean;
   debug_logs: boolean;
   language: string;
   theme: string;
@@ -181,7 +192,6 @@ export interface AppData {
   target_groups: TargetGroup[];
   kits: KitInfo[];
   history: HistoryRun[];
-  log_tail: string[];
 }
 
 export interface StoreItem {
@@ -245,4 +255,35 @@ export interface AppUpdateInfo {
   date?: string | null;
   download_url: string;
   releases_url: string;
+}
+
+export interface DoctorCheck {
+  id: string;
+  title: string;
+  status: "ok" | "warn" | "fail";
+  detail: string;
+}
+
+export interface DoctorReport {
+  checks: DoctorCheck[];
+  generated_at: number;
+  ok: number;
+  warn: number;
+  fail: number;
+}
+
+export interface ListsReport {
+  sources_ok: number;
+  sources_failed: number;
+  domains: number;
+  errors: string[];
+  updated_at: number;
+}
+
+export interface WatchdogReport {
+  checked: boolean;
+  healthy: boolean;
+  percent: number;
+  detail: string;
+  checked_at: number;
 }

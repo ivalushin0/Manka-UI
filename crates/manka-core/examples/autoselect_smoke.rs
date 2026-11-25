@@ -47,10 +47,7 @@ async fn main() -> Result<(), String> {
         &cancel,
         |s| {
             if s.phase == "testing" || s.phase == "done" {
-                println!(
-                    "{}/{} {} — {}",
-                    s.current, s.total, s.current_name, s.phase
-                );
+                println!("{}/{} {} — {}", s.current, s.total, s.current_name, s.phase);
             }
         },
     )
@@ -63,7 +60,13 @@ async fn main() -> Result<(), String> {
         println!("no working strategy found (baseline may already be 100%)");
     }
     for r in state.sorted() {
-        println!("  {:>3}% {:>5}ms {} {}", r.percent, r.avg_ms, r.engine.id(), r.name);
+        println!(
+            "  {:>3}% {:>5}ms {} {}",
+            r.percent,
+            r.avg_ms,
+            r.engine.id(),
+            r.name
+        );
     }
     Ok(())
 }

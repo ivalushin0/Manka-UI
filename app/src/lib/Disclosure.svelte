@@ -24,7 +24,7 @@
       <span class="summary">{@render summary()}</span>
     </button>
     {#if actions}
-      <div class="actions" onclick={(e) => e.stopPropagation()}>{@render actions()}</div>
+      <div class="actions" role="presentation" onclick={(e) => e.stopPropagation()}>{@render actions()}</div>
     {/if}
   </div>
   {#if open}

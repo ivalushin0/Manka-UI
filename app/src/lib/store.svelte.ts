@@ -1,10 +1,13 @@
 import { api } from "./api";
+import { setLanguage, t } from "./i18n.svelte";
 import type {
   AppData,
   AppUpdateInfo,
   AutoState,
   CandidateResult,
+  DoctorReport,
   Engine,
+  ListsReport,
   PortOwner,
   Progress,
   Settings,
@@ -12,9 +15,18 @@ import type {
   StoreItem,
   Strategy,
   TgwsCheck,
+  WatchdogReport,
 } from "./types";
 
-export type Screen = "home" | "strategies" | "auto" | "components" | "telegram" | "settings" | "logs";
+export type Screen =
+  | "home"
+  | "strategies"
+  | "auto"
+  | "components"
+  | "telegram"
+  | "doctor"
+  | "settings"
+  | "logs";
 
 function message(e: unknown): string {
   if (typeof e === "string") return e;
@@ -56,6 +68,12 @@ class Store {
   appUpdateInstalling = $state(false);
   appUpdateProgress = $state<{ downloaded: number; total: number | null } | null>(null);
 
+  doctorReport = $state<DoctorReport | null>(null);
+  doctorBusy = $state(false);
+  doctorExporting = $state(false);
+  listsBusy = $state(false);
+  watchdogBusy = $state(false);
+
   private noticeTimer: number | undefined;
 
   get settings(): Settings | null {
@@ -89,6 +107,7 @@ class Store {
   async refresh() {
     try {
       this.data = await api.getState();
+      setLanguage(this.data.settings.language || "ru");
     } catch (e) {
       this.fail(e);
     } finally {
@@ -127,10 +146,10 @@ class Store {
     await this.guard(async () => {
       if (this.data?.engine.running) {
         await api.engineStop();
-        this.notify("Обход остановлен");
+        this.notify(t("store.bypassStopped"));
       } else {
         await api.engineStart();
-        this.notify("Обход запущен");
+        this.notify(t("store.bypassStarted"));
       }
       await this.refresh();
     });
@@ -139,12 +158,18 @@ class Store {
   async saveSettings(patch: Partial<Settings>) {
     const s = this.settings;
     if (!s) return;
+    const prev = s;
     const next = { ...s, ...patch };
+    // optimistic update with rollback: the UI must never drift from the backend
     if (this.data) this.data.settings = next;
+    if (patch.language !== undefined) setLanguage(patch.language);
     try {
       const saved = await api.saveSettings(next);
       if (this.data) this.data.settings = saved;
+      setLanguage(saved.language || "ru");
     } catch (e) {
+      if (this.data) this.data.settings = prev;
+      if (patch.language !== undefined) setLanguage(prev.language || "ru");
       this.fail(e);
     }
   }
@@ -156,7 +181,7 @@ class Store {
       const saved = await api.setActiveStrategy(s.engine, id);
       if (this.data) this.data.settings = saved;
       await this.refresh();
-      this.notify("Стратегия применена");
+      this.notify(t("store.strategyApplied"));
     });
   }
 
@@ -179,7 +204,7 @@ class Store {
     await this.guard(async () => {
       await api.installComponent(id, force);
       await this.refresh();
-      this.notify("Компонент установлен");
+      this.notify(t("store.componentInstalled"));
     });
   }
 
@@ -196,7 +221,11 @@ class Store {
       this.componentsCheckedAt = Date.now();
       const updates = this.data?.components.filter((c) => c.update_available) ?? [];
       if (!silent) {
-        this.notify(updates.length ? `Доступны обновления: ${updates.map((u) => u.name).join(", ")}` : "Всё актуально");
+        this.notify(
+          updates.length
+            ? t("store.updatesAvailable", { list: updates.map((u) => u.name).join(", ") })
+            : t("store.allUpToDate"),
+        );
       }
     } catch (e) {
       if (!silent) this.fail(e);
@@ -208,18 +237,17 @@ class Store {
   async checkAppUpdate(silent = false) {
     const repo = this.settings?.update_repo?.trim();
     if (!repo) {
-      if (!silent) this.fail("Укажите GitHub-репозиторий в настройках — например, ivalu/manka");
+      if (!silent) this.fail(t("store.needRepo"));
       return;
     }
     this.appUpdateChecking = true;
     try {
       const found = await api.appUpdateCheck();
       this.appUpdate = found;
-      if (!silent) {
-        this.notify(found ? `Доступно обновление ${found.version}` : "У вас последняя версия Manka");
-      }
-      if (found) {
-        this.notify(`Доступна новая версия Manka ${found.version} — откройте «Настройки»`);
+      if (!silent || found) {
+        this.notify(
+          found ? t("store.appUpdateFound", { version: found.version }) : t("store.appUpToDate"),
+        );
       }
     } catch (e) {
       if (!silent) this.fail(e);
@@ -243,11 +271,11 @@ class Store {
     this.appUpdateProgress = payload;
   }
 
-  async rollbackZapret() {
+  async rollbackComponent(id: string) {
     await this.guard(async () => {
-      await api.rollbackComponent("zapret");
+      await api.rollbackComponent(id);
       await this.refresh();
-      this.notify("Выполнен откат Zapret");
+      this.notify(id === "zapret" ? t("store.rollbackZapret") : t("store.rollbackTgws"));
     });
   }
 
@@ -269,7 +297,7 @@ class Store {
       if (owner) {
         this.portOwner = owner;
         this.screen = "telegram";
-        this.notify(`Порт ${s.tgws_port} занят: ${owner.name} (PID ${owner.pid})`);
+        this.notify(t("store.portBusy", { port: s.tgws_port, name: owner.name, pid: owner.pid }));
         return;
       }
     } catch {
@@ -279,7 +307,7 @@ class Store {
       await api.tgwsStart();
       await this.refresh();
       this.portOwner = null;
-      this.notify("TG WS Proxy запущен");
+      this.notify(t("store.proxyStarted"));
     });
   }
 
@@ -287,7 +315,7 @@ class Store {
     await this.guard(async () => {
       await api.tgwsStop();
       await this.refresh();
-      this.notify("TG WS Proxy остановлен");
+      this.notify(t("store.proxyStopped"));
     });
   }
 
@@ -300,10 +328,10 @@ class Store {
       this.data.engine = st.engine;
       this.data.proxy = st.proxy;
       if (wasEngine && !st.engine.running && this.settings?.enabled) {
-        this.notify("Движок остановился — откройте журнал");
+        this.notify(t("store.engineStopped"));
       }
       if (wasProxy && !st.proxy.running && this.settings?.tgws_enabled) {
-        this.notify("TG WS Proxy остановился — откройте журнал");
+        this.notify(t("store.proxyStoppedUnexpected"));
       }
     } catch {
       /* window is closing */
@@ -333,7 +361,7 @@ class Store {
       this.portOwner = null;
       await api.tgwsStart();
       await this.refresh();
-      this.notify("Старый прокси остановлен, Manka-прокси запущен");
+      this.notify(t("store.portTaken"));
     });
   }
 
@@ -353,7 +381,7 @@ class Store {
     await this.guard(async () => {
       const saved = await api.tgwsRegenerateSecret();
       if (this.data) this.data.settings = saved;
-      this.notify("Секрет обновлён — переподключите Telegram");
+      this.notify(t("store.secretUpdated"));
     });
   }
 
@@ -362,7 +390,7 @@ class Store {
     try {
       await api.storeRefresh();
       this.storeItems = await api.storeItems();
-      this.notify("Каталог магазина обновлён");
+      this.notify(t("store.storeRefreshed"));
     } catch (e) {
       this.fail(e);
     } finally {
@@ -392,7 +420,7 @@ class Store {
       await api.storeInstall(storeId);
       this.storeItems = await api.storeItems();
       await this.refresh();
-      this.notify("Набор установлен");
+      this.notify(t("store.kitInstalled"));
     });
   }
 
@@ -401,7 +429,7 @@ class Store {
       await api.storeRemove(storeId);
       this.storeItems = await api.storeItems();
       await this.refresh();
-      this.notify("Набор удалён");
+      this.notify(t("store.kitRemoved"));
     });
   }
 
@@ -422,7 +450,7 @@ class Store {
         this.data.settings.last_check = Date.now();
         this.data.settings.last_check_rate = total ? Math.round((ok / total) * 100) : 0;
       }
-      this.notify(`Проверка завершена: ${total ? Math.round((ok / total) * 100) : 0}%`);
+      this.notify(t("store.checkDone", { percent: total ? Math.round((ok / total) * 100) : 0 }));
     } catch (e) {
       this.fail(e);
     } finally {
@@ -481,7 +509,7 @@ class Store {
   async cancelAuto() {
     try {
       await api.autoCancel();
-      this.notify("Останавливаю подбор…");
+      this.notify(t("store.autoStopping"));
     } catch (e) {
       this.fail(e);
     }
@@ -491,7 +519,7 @@ class Store {
     await this.guard(async () => {
       await api.autoApply(candidate);
       await this.refresh();
-      this.notify("Лучшая стратегия применена");
+      this.notify(t("store.bestApplied"));
       this.screen = "home";
     });
   }
@@ -526,6 +554,87 @@ class Store {
       this.fail(e);
       return [];
     }
+  }
+
+  // ---- Doctor / lists / watchdog
+
+  async runDoctor() {
+    this.doctorBusy = true;
+    try {
+      this.doctorReport = await api.doctorRun();
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.doctorBusy = false;
+    }
+  }
+
+  async exportDoctor() {
+    this.doctorExporting = true;
+    try {
+      const path = await api.doctorExport();
+      this.notify(t("store.doctorSaved", { path }));
+      return path;
+    } catch (e) {
+      this.fail(e);
+      return null;
+    } finally {
+      this.doctorExporting = false;
+    }
+  }
+
+  async updateLists() {
+    this.listsBusy = true;
+    try {
+      const report = await api.listsUpdateNow();
+      this.notify(t("store.listsUpdated", { count: report.domains }));
+      await this.refresh();
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.listsBusy = false;
+    }
+  }
+
+  async watchdogCheckNow() {
+    this.watchdogBusy = true;
+    try {
+      const report = await api.watchdogCheckNow();
+      this.notify(
+        report.checked
+          ? report.healthy
+            ? t("store.watchdogOk", { percent: report.percent })
+            : t("store.watchdogProblem", { detail: report.detail })
+          : t("store.watchdogSkipped"),
+      );
+      await this.refresh();
+    } catch (e) {
+      this.fail(e);
+    } finally {
+      this.watchdogBusy = false;
+    }
+  }
+
+  onWatchdog(report: WatchdogReport) {
+    if (report.checked && !report.healthy) {
+      this.notify(t("store.watchdogDegraded", { percent: report.percent }));
+    }
+    void this.refresh();
+  }
+
+  onWatchdogFixed(payload: { name: string; percent: number }) {
+    this.notify(t("store.watchdogFixed", { name: payload.name, percent: payload.percent }));
+    void this.refresh();
+  }
+
+  onWatchdogFailed() {
+    this.notify(t("store.watchdogFailed"));
+    void this.refresh();
+  }
+
+  onListsUpdated(report: ListsReport) {
+    this.notify(t("store.listsUpdated", { count: report.domains }));
+    void this.refresh();
   }
 }
 

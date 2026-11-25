@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # weekly: catches dependency drift even when nobody commits
+    - cron: "17 4 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: Rust (fmt / clippy / tests)
+    runs-on: windows-latest
+    steps:
+      # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      # dtolnay/rust-toolchain "stable" branch as of 2026-11-25
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+        with:
+          components: rustfmt, clippy
+
+      # v2.8.0
+      - uses: Swatinem/rust-cache@98c8021b550208e191a6a3145459bfc9fb29c4c0
+
+      - name: rustfmt
+        run: cargo fmt --all -- --check
+
+      - name: clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: tests
+        run: cargo test -p manka-core
+
+  ui:
+    name: Svelte / TypeScript
+    runs-on: windows-latest
+    steps:
+      # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: install
+        working-directory: app
+        run: npm ci
+
+      - name: svelte-check
+        working-directory: app
+        run: npm run check
+
+      - name: build
+        working-directory: app
+        run: npm run build
+
+  audit:
+    name: Dependency audit
+    runs-on: windows-latest
+    continue-on-error: true
+    steps:
+      # v4.3.1
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+
+      # dtolnay/rust-toolchain "stable" branch as of 2026-11-25
+      - uses: dtolnay/rust-toolchain@39008827e6b4319a349e9a42dfc90579dd25f1ca
+
+      - name: install cargo-audit
+        run: cargo install cargo-audit --locked
+
+      - name: cargo audit
+        run: cargo audit
+
+      # v4.4.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      - name: npm audit
+        working-directory: app
+        run: npm audit --audit-level=high

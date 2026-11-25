@@ -1,5 +1,6 @@
 <script lang="ts">
   import Icon from "./Icon.svelte";
+  import { t } from "./i18n.svelte";
 
   let {
     title,
@@ -38,7 +39,7 @@
         <h3>{title}</h3>
         {#if subtitle}<p class="small muted">{subtitle}</p>{/if}
       </div>
-      <button class="icon-btn close" aria-label="Закрыть" onclick={onclose}>
+      <button class="icon-btn close" aria-label={t("common.close")} onclick={onclose}>
         <Icon name="x" size={17} />
       </button>
     </header>
