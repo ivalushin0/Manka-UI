@@ -52,3 +52,16 @@ jobs:
           prerelease: false
           includeUpdaterJson: true
           args: --bundles nsis
+
+      # Every release must carry human-written notes. The workflow fails instead
+      # of publishing a generic "build vX" body (see AGENTS.md).
+      - name: Apply release notes
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $notes = ".github/release-notes/${{ github.ref_name }}.md"
+          if (-not (Test-Path $notes)) {
+            throw "Release notes file '$notes' is missing. Add human-readable notes before releasing (see AGENTS.md)."
+          }
+          gh release edit "${{ github.ref_name }}" --notes-file $notes
