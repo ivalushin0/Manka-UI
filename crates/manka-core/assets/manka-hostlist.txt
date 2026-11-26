@@ -7,13 +7,11 @@
 ^freedns.controld.com
 ^wikimedia-dns.org
 4pda.to
-5ka.ru
 7tv.app
 7tv.io
 bbc.co.uk
 bbc.com
 betterttv.net
-buymeacoffee.com
 cdninstagram.com
 cloudflareaccess.com
 cloudflareapps.com
@@ -63,16 +61,13 @@ facebook.com
 fbcdn.net
 ffzap.com
 filmix.my
-fonts.googleapis.com
 frankerfacez.com
-google.ru
 googlevideo.com
 hdrezka.ag
 instagram.com
 jnn-pa.googleapis.com
 kinozal.tv
 klipy.com
-ko-fi.com
 licdn.com
 linkedin.com
 live-video.net
@@ -116,7 +111,6 @@ web.telegram.org
 whatsapp.com
 whatsapp.net
 wide-youtube.l.google.com
-www.gstatic.com
 x.com
 youtu.be
 youtube.com
@@ -132,4 +126,27 @@ yt4.ggpht.com
 ytimg.com
 ytimg.l.google.com
 yt-video-upload.l.google.com
-zendesk.com
+
+# Telegram WS Proxy (tg-ws-proxy-rs) default Cloudflare domains.
+# They are updated by Manka from the proxy upstream; the list lives in
+# lists\tgws-cf-domains.txt, this copy is only a fallback for fresh installs.
+pclead.co.uk
+offshor.co.uk
+cakeisalie.co.uk
+noskomnadzor.co.uk
+lovetrue.co.uk
+sorokdva.co.uk
+pyatdesyatdva.co.uk
+kartoshka.co.uk
+sorokodin.co.uk
+pyatdesyatodin.co.uk
+notelega.co.uk
+ebally.co.uk
+nebally.co.uk
+havegreatday.co.uk
+pomogite.co.uk
+fixtelega.co.uk
+sadnews.co.uk
+onedaychamp.co.uk
+stopblocking.co.uk
+nothingthere.co.uk

@@ -46,6 +46,19 @@ pub fn remote_list_file(paths: &Paths) -> PathBuf {
     paths.lists().join("remote-hostlist.txt")
 }
 
+/// Cloudflare-proxy domains used by tg-ws-proxy-rs. They are not blocked
+/// resources by themselves, but the proxy's TLS/WS connections to them must be
+/// desynced on networks where Cloudflare is filtered. The list is fetched from
+/// the proxy's upstream, deobfuscated and merged into the effective hostlist.
+pub fn tgws_domains_file(paths: &Paths) -> PathBuf {
+    paths.lists().join("tgws-cf-domains.txt")
+}
+
+const TGWS_DOMAINS_ASSET: &str = include_str!("../assets/tgws-cf-domains.txt");
+const TGWS_DOMAINS_URL: &str =
+    "https://raw.githubusercontent.com/Flowseal/tg-ws-proxy/refs/heads/main/.github/cfproxy-domains.txt";
+const TGWS_DOMAINS_MAX_BYTES: u64 = 256 * 1024;
+
 pub fn effective_hostlist_file(paths: &Paths) -> PathBuf {
     paths.lists().join("effective-hostlist.txt")
 }
@@ -62,6 +75,8 @@ pub fn effective_hostlist(paths: &Paths) -> PathBuf {
 }
 
 /// Keep lines that look like hostnames: no comments, no blanks, no spaces.
+/// A leading `^` is preserved: zapret uses it for an exact host without
+/// subdomains.
 fn normalize(text: &str, into: &mut BTreeSet<String>) {
     for line in text.lines() {
         let line = line.trim();
@@ -72,6 +87,8 @@ fn normalize(text: &str, into: &mut BTreeSet<String>) {
         {
             continue;
         }
+        let exact = line.starts_with('^');
+        let line = line.trim_start_matches('^').trim();
         let line = line
             .trim_start_matches("+.")
             .trim_start_matches("*.")
@@ -84,12 +101,13 @@ fn normalize(text: &str, into: &mut BTreeSet<String>) {
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
             && line.contains('.')
         {
-            into.insert(line);
+            into.insert(if exact { format!("^{line}") } else { line });
         }
     }
 }
 
-/// Rebuild `effective-hostlist.txt` from the built-in list plus remote lists.
+/// Rebuild `effective-hostlist.txt` from the built-in list, remote lists and
+/// the Telegram Cloudflare proxy domains.
 pub fn rebuild_effective(paths: &Paths) -> std::io::Result<u32> {
     let mut domains = BTreeSet::new();
     if let Ok(text) = fs::read_to_string(paths.hostlist_file()) {
@@ -98,9 +116,97 @@ pub fn rebuild_effective(paths: &Paths) -> std::io::Result<u32> {
     if let Ok(text) = fs::read_to_string(remote_list_file(paths)) {
         normalize(&text, &mut domains);
     }
+    if let Ok(text) = fs::read_to_string(tgws_domains_file(paths)) {
+        normalize(&text, &mut domains);
+    }
     let body: String = domains.iter().map(|d| format!("{d}\n")).collect();
     crate::util::atomic_write(&effective_hostlist_file(paths), body.as_bytes())?;
     Ok(domains.len() as u32)
+}
+
+/// Create/update the managed Telegram proxy domain list and rebuild the
+/// effective hostlist. Called on every start, so new builds ship new domains
+/// without touching the user's editable `manka-hostlist.txt`.
+pub fn ensure_defaults(paths: &Paths) -> std::io::Result<u32> {
+    let file = tgws_domains_file(paths);
+    let mut lines: Vec<String> = fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let mut changed = !file.exists();
+    for domain in TGWS_DOMAINS_ASSET.lines().map(str::trim).filter(|l| !l.is_empty()) {
+        if !lines.iter().any(|existing| existing.eq_ignore_ascii_case(domain)) {
+            lines.push(domain.to_string());
+            changed = true;
+        }
+    }
+    if changed {
+        let body = format!("{}\n", lines.join("\n"));
+        crate::util::atomic_write(&file, body.as_bytes())?;
+    }
+    rebuild_effective(paths)
+}
+
+/// Decode one entry of the proxy upstream's obfuscated CF domain list.
+/// Every alphabetic character of the prefix is shifted backward by the number
+/// of alphabetic characters, and `.com` is restored to `.co.uk`.
+pub fn deobfuscate_cf_domain(encoded: &str) -> Option<String> {
+    let prefix = encoded.trim().strip_suffix(".com")?;
+    if prefix.is_empty() {
+        return None;
+    }
+    let shift = prefix.chars().filter(|c| c.is_ascii_alphabetic()).count() as i32;
+    let decoded: String = prefix
+        .chars()
+        .map(|c| {
+            if c.is_ascii_lowercase() {
+                let v = ((c as i32 - 'a' as i32 - shift).rem_euclid(26) as u8) + b'a';
+                v as char
+            } else if c.is_ascii_uppercase() {
+                let v = ((c as i32 - 'A' as i32 - shift).rem_euclid(26) as u8) + b'A';
+                v as char
+            } else {
+                c
+            }
+        })
+        .collect();
+    Some(format!("{decoded}.co.uk"))
+}
+
+/// Fetch the current Telegram proxy domain list, deobfuscate and store it.
+/// Returns true when the effective hostlist changed.
+pub async fn refresh_tgws_domains(paths: &Paths) -> bool {
+    let Ok(text) = http::get_text(TGWS_DOMAINS_URL, TGWS_DOMAINS_MAX_BYTES).await else {
+        return false;
+    };
+    let domains: BTreeSet<String> = text
+        .lines()
+        .filter_map(deobfuscate_cf_domain)
+        .filter(|d| d.contains('.') && !d.contains(char::is_whitespace))
+        .collect();
+    if domains.is_empty() {
+        return false;
+    }
+    let file = tgws_domains_file(paths);
+    let mut merged: BTreeSet<String> = fs::read_to_string(&file)
+        .unwrap_or_default()
+        .lines()
+        .map(|l| l.trim().to_string())
+        .filter(|l| !l.is_empty())
+        .collect();
+    let before = merged.clone();
+    merged.extend(domains);
+    if merged == before {
+        return false;
+    }
+    let body = format!("{}\n", merged.into_iter().collect::<Vec<_>>().join("\n"));
+    if crate::util::atomic_write(&file, body.as_bytes()).is_err() {
+        return false;
+    }
+    let _ = rebuild_effective(paths);
+    true
 }
 
 fn user_sources(settings: &Settings) -> Vec<String> {
@@ -163,6 +269,9 @@ pub async fn update(paths: &Paths, settings: &Settings) -> ListsReport {
         }
         report.updated_at = crate::util::now_ms();
     }
+    // The Telegram proxy's Cloudflare domains must always be in the hostlist,
+    // even when the regular list update failed.
+    let _ = refresh_tgws_domains(paths).await;
     report
 }
 
@@ -174,14 +283,40 @@ mod tests {
     fn normalize_filters_junk() {
         let mut set = BTreeSet::new();
         normalize(
-            "# comment\nyoutube.com\n*.googlevideo.com\n+.#bad\nnot a domain\nlocalhost\nOK.Example.COM\n",
+            "# comment\nyoutube.com\n*.googlevideo.com\n+.#bad\nnot a domain\nlocalhost\nOK.Example.COM\n^dns.google\n",
             &mut set,
         );
         assert!(set.contains("youtube.com"));
         assert!(set.contains("googlevideo.com"));
         assert!(set.contains("ok.example.com"));
+        assert!(set.contains("^dns.google"));
         assert!(!set.iter().any(|d| d.contains(' ')));
         assert!(!set.contains("localhost"));
+    }
+
+    #[test]
+    fn deobfuscates_cf_domains() {
+        assert_eq!(deobfuscate_cf_domain("virkgj.com").as_deref(), Some("pclead.co.uk"));
+        assert_eq!(
+            deobfuscate_cf_domain("zaftuzsftqdq.com").as_deref(),
+            Some("nothingthere.co.uk")
+        );
+        assert_eq!(deobfuscate_cf_domain("not-a-domain"), None);
+    }
+
+    #[test]
+    fn ensure_defaults_merges_tgws_domains() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        fs::create_dir_all(paths.lists()).unwrap();
+        fs::write(paths.hostlist_file(), "^dns.google\nyoutube.com\n").unwrap();
+        let count = ensure_defaults(&paths).unwrap();
+        assert!(count >= 21);
+        let effective = fs::read_to_string(effective_hostlist_file(&paths)).unwrap();
+        assert!(effective.contains("^dns.google"));
+        assert!(effective.contains("youtube.com"));
+        assert!(effective.contains("pclead.co.uk"));
+        assert!(effective.contains("nothingthere.co.uk"));
     }
 
     #[test]

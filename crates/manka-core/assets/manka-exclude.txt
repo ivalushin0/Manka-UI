@@ -225,3 +225,13 @@ yiyan.baidu.com
 you.com
 yuanbao.tencent.com
 zhipuai.cn
+accounts.youtube.com
+ssl.gstatic.com
+www.gstatic.com
+fonts.googleapis.com
+fonts.gstatic.com
+google.ru
+zendesk.com
+ko-fi.com
+buymeacoffee.com
+5ka.ru

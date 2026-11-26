@@ -28,6 +28,8 @@ pub fn run() {
     let _ = paths.ensure();
     let _ = manka_core::settings::ensure_exclude_list(&paths);
     let _ = manka_core::settings::ensure_hostlist(&paths);
+    // Builds effective-hostlist.txt: built-in + remote + proxy CF domains.
+    let _ = manka_core::lists::ensure_defaults(&paths);
     let mut settings = Settings::load(&paths);
     if settings.tgws_secret.trim().is_empty() {
         settings.tgws_secret = Settings::default().tgws_secret;

@@ -291,10 +291,47 @@ const DEFAULT_HOSTLIST: &str = include_str!("../assets/manka-hostlist.txt");
 
 pub fn ensure_exclude_list(paths: &Paths) -> std::io::Result<()> {
     let file = paths.exclude_list();
-    if file.exists() {
+    if !file.exists() {
+        return std::fs::write(file, DEFAULT_EXCLUDE);
+    }
+    // Keep critical exceptions even in an existing, user-edited list. Google
+    // sign-in breaks when its static assets are desynced; these hosts work
+    // without bypass on the target networks.
+    const REQUIRED: &[&str] = &[
+        "accounts.google.com",
+        "accounts.youtube.com",
+        "myaccount.google.com",
+        "ssl.gstatic.com",
+        "www.gstatic.com",
+        "fonts.googleapis.com",
+        "fonts.gstatic.com",
+        "google.ru",
+        // Support/creator pages that are not blocked and must not be altered.
+        "zendesk.com",
+        "ko-fi.com",
+        "buymeacoffee.com",
+        "5ka.ru",
+    ];
+    let text = std::fs::read_to_string(&file)?;
+    let existing: Vec<String> = text
+        .lines()
+        .map(|l| l.trim().trim_start_matches('^').to_lowercase())
+        .collect();
+    let missing: Vec<&str> = REQUIRED
+        .iter()
+        .copied()
+        .filter(|d| !existing.iter().any(|e| e == d))
+        .collect();
+    if missing.is_empty() {
         return Ok(());
     }
-    std::fs::write(file, DEFAULT_EXCLUDE)
+    let mut body = text;
+    if !body.ends_with('\n') && !body.is_empty() {
+        body.push('\n');
+    }
+    body.push_str(&missing.join("\n"));
+    body.push('\n');
+    crate::util::atomic_write(&file, body.as_bytes())
 }
 
 /// Create `lists/manka-hostlist.txt` once. Contains the resources that are

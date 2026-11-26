@@ -160,12 +160,12 @@ fn inject_hostlist(
                 || a == "--payload=http_req"
                 || a.starts_with("--payload=tls_client_hello")
         });
-        if usable
-            && is_http_tls
-            && !is_quic
-            && !has_arg(profile, "--hostlist=")
-            && !has_arg(profile, "--hostlist-domains=")
-        {
+        let has_host_filter = has_arg(profile, "--hostlist=")
+            || has_arg(profile, "--hostlist-domains=");
+        // In "list" scope both TCP desync and the QUIC drop must be limited to
+        // the hostlist. Dropping QUIC for the whole system makes normal sites
+        // (Google sign-in, browsers using HTTP/3) hang until the TCP fallback.
+        if usable && (is_http_tls || is_quic) && !has_host_filter {
             let pos = profile
                 .iter()
                 .position(|a| {
@@ -176,7 +176,7 @@ fn inject_hostlist(
                 .unwrap_or(profile.len());
             profile.insert(pos, hostlist_arg.clone());
         }
-        if block_quic && is_quic {
+        if block_quic && is_quic && (hostlist.is_none() || usable) {
             profile.retain(|a| !a.starts_with("--lua-desync=") && !a.starts_with("--dpi-desync="));
             profile.push(if engine == Engine::Zapret2 {
                 "--lua-desync=drop".into()
@@ -398,14 +398,26 @@ pub fn tgws_args(settings: &Settings) -> Vec<String> {
     if settings.tgws_cloudflare {
         args.push("--default-domains".into());
     }
-    for dc in settings
+    let user_dcs: Vec<String> = settings
         .tgws_dc_ips
         .split([',', ' ', '\n', ';'])
-        .map(|s| s.trim())
+        .map(|s| s.trim().to_string())
         .filter(|s| !s.is_empty())
-    {
+        .collect();
+    // Without Cloudflare the proxy has nothing to connect to unless we pass
+    // explicit DC targets. With --default-domains they would make CF slower,
+    // so the built-in targets are only added for the direct-only mode.
+    let dcs: Vec<String> = if user_dcs.is_empty() && !settings.tgws_cloudflare {
+        vec![
+            "2:149.154.167.220".into(),
+            "4:149.154.167.220".into(),
+        ]
+    } else {
+        user_dcs
+    };
+    for dc in dcs {
         args.push("--dc-ip".into());
-        args.push(dc.to_string());
+        args.push(dc);
     }
     args.push("--ws-connect-timeout".into());
     args.push("3".into());
@@ -547,6 +559,30 @@ mod tests {
         let r = render(&s, &settings, &paths, None, None).unwrap();
         assert!(r.args.iter().any(|a| a == "--lua-desync=drop"));
         assert!(!r.args.iter().any(|a| a == "--lua-desync=fake"));
+        // scope=list: the QUIC drop must be limited to the hostlist too
+        let hostlist = format!(
+            "--hostlist={}",
+            paths.hostlist_file().to_string_lossy().replace('\\', "/")
+        );
+        assert!(r.args.contains(&hostlist), "QUIC drop must be hostlist-scoped: {:?}", r.args);
+    }
+
+    #[test]
+    fn render_scope_all_drops_quic_everywhere() {
+        let (_dir, paths) = fixture();
+        let s = Strategy::new(
+            "t4b",
+            Engine::Zapret2,
+            "t",
+            "--wf-udp=443 --filter-l7=quic --lua-desync=fake",
+        );
+        let settings = Settings {
+            bypass_scope: "all".into(),
+            ..Default::default()
+        };
+        let r = render(&s, &settings, &paths, None, None).unwrap();
+        assert!(r.args.iter().any(|a| a == "--lua-desync=drop"));
+        assert!(!r.args.iter().any(|a| a.starts_with("--hostlist=")));
     }
 
     #[test]

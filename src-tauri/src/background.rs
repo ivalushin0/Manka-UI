@@ -13,11 +13,28 @@ use crate::tray::refresh_tray;
 /// re-runs autoselection when the active strategy degrades.
 pub(crate) fn spawn_background_tasks(app: tauri::AppHandle) {
     tauri::async_runtime::spawn(async move {
+        let mut last_cf_refresh = manka_core::util::now_ms();
         loop {
             tokio::time::sleep(Duration::from_secs(60)).await;
             let state = app.state::<CoreState>();
             let settings = settings_of(&state);
             let now = manka_core::util::now_ms();
+
+            // ---- Cloudflare proxy domains rotate upstream; refresh them twice
+            // a day so the Telegram proxy keeps a desynced route.
+            if now - last_cf_refresh >= 12 * 3_600_000 {
+                last_cf_refresh = now;
+                if manka_core::lists::refresh_tgws_domains(&state.paths).await {
+                    app_log(&state, "telegram proxy domain list updated");
+                    if state.processes.engine_running().await {
+                        let _ = bring_engine_up(&state).await;
+                    }
+                    if settings.tgws_enabled {
+                        let _ = crate::engine::tgws_restart_impl(&state).await;
+                    }
+                    let _ = app.emit("lists-updated", ());
+                }
+            }
 
             // ---- scheduled list refresh
             if settings.lists_auto_update
