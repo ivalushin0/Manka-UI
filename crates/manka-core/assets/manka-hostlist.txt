@@ -112,6 +112,7 @@ whatsapp.com
 whatsapp.net
 wide-youtube.l.google.com
 x.com
+accounts.youtube.com
 youtu.be
 youtube.com
 youtube.googleapis.com

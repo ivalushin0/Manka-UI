@@ -1,7 +1,7 @@
 {
   "name": "manka-ui",
   "private": true,
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Manka for Windows — bypass DPI, TG WS Proxy and strategy autoselect",
   "scripts": {
     "dev": "npm --prefix app run dev",

@@ -299,7 +299,6 @@ pub fn ensure_exclude_list(paths: &Paths) -> std::io::Result<()> {
     // without bypass on the target networks.
     const REQUIRED: &[&str] = &[
         "accounts.google.com",
-        "accounts.youtube.com",
         "myaccount.google.com",
         "ssl.gstatic.com",
         "www.gstatic.com",
@@ -312,9 +311,25 @@ pub fn ensure_exclude_list(paths: &Paths) -> std::io::Result<()> {
         "buymeacoffee.com",
         "5ka.ru",
     ];
+    // Hosts that older builds forced into the exclusion list but that are in
+    // fact blocked by providers. `accounts.youtube.com` finishes the YouTube
+    // sign-in handshake: excluding it leaves the request hanging, so it must
+    // be bypassed like `youtube.com`. Strip it from existing user lists.
+    const OBSOLETE: &[&str] = &["accounts.youtube.com"];
+
     let text = std::fs::read_to_string(&file)?;
-    let existing: Vec<String> = text
-        .lines()
+    let mut changed = false;
+    let mut kept: Vec<&str> = Vec::new();
+    for line in text.lines() {
+        let key = line.trim().trim_start_matches('^').to_lowercase();
+        if OBSOLETE.iter().any(|o| *o == key) {
+            changed = true;
+            continue;
+        }
+        kept.push(line);
+    }
+    let existing: Vec<String> = kept
+        .iter()
         .map(|l| l.trim().trim_start_matches('^').to_lowercase())
         .collect();
     let missing: Vec<&str> = REQUIRED
@@ -322,15 +337,17 @@ pub fn ensure_exclude_list(paths: &Paths) -> std::io::Result<()> {
         .copied()
         .filter(|d| !existing.iter().any(|e| e == d))
         .collect();
-    if missing.is_empty() {
+    if !missing.is_empty() {
+        changed = true;
+        kept.extend(missing.iter().copied());
+    }
+    if !changed {
         return Ok(());
     }
-    let mut body = text;
-    if !body.ends_with('\n') && !body.is_empty() {
+    let mut body = kept.join("\n");
+    if !body.is_empty() {
         body.push('\n');
     }
-    body.push_str(&missing.join("\n"));
-    body.push('\n');
     crate::util::atomic_write(&file, body.as_bytes())
 }
 
@@ -342,4 +359,28 @@ pub fn ensure_hostlist(paths: &Paths) -> std::io::Result<()> {
         return Ok(());
     }
     std::fs::write(file, DEFAULT_HOSTLIST)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn exclude_list_drops_accounts_youtube() {
+        let dir = tempfile::tempdir().unwrap();
+        let paths = Paths::new(dir.path());
+        std::fs::create_dir_all(paths.lists()).unwrap();
+        std::fs::write(
+            paths.exclude_list(),
+            "youtube.com\naccounts.youtube.com\n# kept\n",
+        )
+        .unwrap();
+
+        ensure_exclude_list(&paths).unwrap();
+
+        let text = std::fs::read_to_string(paths.exclude_list()).unwrap();
+        assert!(!text.lines().any(|l| l.trim() == "accounts.youtube.com"));
+        assert!(text.contains("accounts.google.com"));
+        assert!(text.contains("# kept"));
+    }
 }
