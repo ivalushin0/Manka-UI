@@ -40,6 +40,22 @@
 
   onMount(() => {
     const offs: (() => void)[] = [];
+    let lastFocusCheck = 0;
+
+    function autoCheckConfigured() {
+      const s = store.settings;
+      if (!s?.update_repo?.trim() || !s.auto_update_check) return;
+      const interval = Math.max(1, s.app_update_interval_hours || 24) * 3600_000;
+      if (Date.now() - (s.last_app_update_check || 0) > interval) void store.checkAppUpdate(true);
+    }
+
+    function autoCheckNow() {
+      const s = store.settings;
+      if (!s?.update_repo?.trim() || !s.auto_update_check) return;
+      lastFocusCheck = Date.now();
+      void store.checkAppUpdate(true);
+    }
+
     store.init().then(() => {
       const s = store.settings;
       if (!s) return;
@@ -47,14 +63,19 @@
       if (Date.now() - (s.last_update_check || 0) > interval) {
         store.checkUpdates();
       }
-      if (s.update_repo?.trim() && s.auto_update_check) {
-        const appInterval = Math.max(1, s.app_update_interval_hours || 24) * 3600_000;
-        if (Date.now() - (s.last_app_update_check || 0) > appInterval) {
-          void store.checkAppUpdate(true);
-        }
-      }
+      // Always look for a new app version at launch, regardless of the saved
+      // interval: otherwise a release lands silently and the user never sees
+      // the toast or the update card.
+      autoCheckNow();
     });
+
     const statusTimer = window.setInterval(() => store.refreshStatus(), 3000);
+    const updateTimer = window.setInterval(autoCheckConfigured, 15 * 60_000);
+    const onFocus = () => {
+      if (Date.now() - lastFocusCheck < 30 * 60_000) return;
+      autoCheckNow();
+    };
+    window.addEventListener("focus", onFocus);
     (async () => {
       offs.push(
         await listen<Progress>("component-progress", (e) => store.onProgress(e.payload)),
@@ -74,6 +95,8 @@
     })();
     return () => {
       window.clearInterval(statusTimer);
+      window.clearInterval(updateTimer);
+      window.removeEventListener("focus", onFocus);
       offs.forEach((off) => off());
     };
   });
@@ -103,7 +126,7 @@
           <button class:active={store.screen === item.id} onclick={() => (store.screen = item.id)}>
             <span class="icon"><Icon name={item.icon} /></span>
             <span>{item.label}</span>
-            {#if item.id === "settings" && store.appUpdate}
+            {#if (item.id === "settings" || item.id === "home") && store.appUpdate}
               <span class="nav-dot" title={t("app.updateAvailable", { version: store.appUpdate.version })}></span>
             {/if}
           </button>
@@ -136,7 +159,7 @@
         </div>
       {/if}
 
-      {#if store.appUpdate}
+      {#if store.appUpdate && store.screen !== "home"}
         <div class="banner update" style="max-width:1000px;margin:0 auto 14px">
           <Icon name="download" size={20} />
           <span class="grow">

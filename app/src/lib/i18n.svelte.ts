@@ -146,6 +146,8 @@ const ru = {
   "home.changeStrategy": "Сменить стратегию",
   "home.lastDiagnostics": "Последняя диагностика: {time}",
   "home.copyLinkFailed": "Не удалось скопировать ссылку",
+  "home.updateReady": "Доступно обновление {version}",
+  "home.updateHint": "Вышла новая версия Manka — обновитесь, чтобы получить исправления.",
 
   // ---- strategies
   "strategies.subtitle": "Встроенные, из магазина CDPI и найденные автоподбором",
@@ -557,6 +559,8 @@ const en: Record<Key, string> = {
   "home.changeStrategy": "Change strategy",
   "home.lastDiagnostics": "Last diagnostics: {time}",
   "home.copyLinkFailed": "Couldn't copy the link",
+  "home.updateReady": "Update {version} available",
+  "home.updateHint": "A new Manka version is out — update to get the fixes.",
 
   "strategies.subtitle": "Built-in, from the CDPI store and found by auto-select",
   "strategies.searchPh": "Search by name, tag, source…",
@@ -958,6 +962,8 @@ const uk: Record<Key, string> = {
   "home.changeStrategy": "Змінити стратегію",
   "home.lastDiagnostics": "Остання діагностика: {time}",
   "home.copyLinkFailed": "Не вдалося скопіювати посилання",
+  "home.updateReady": "Доступне оновлення {version}",
+  "home.updateHint": "Вийшла нова версія Manka — оновіться, щоб отримати виправлення.",
 
   "strategies.subtitle": "Вбудовані, з магазину CDPI та знайдені автодобором",
   "strategies.searchPh": "Пошук за назвою, тегом, джерелом…",

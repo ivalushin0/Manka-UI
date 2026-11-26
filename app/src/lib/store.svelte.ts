@@ -75,6 +75,7 @@ class Store {
   watchdogBusy = $state(false);
 
   private noticeTimer: number | undefined;
+  private notifiedUpdateVersion = "";
 
   get settings(): Settings | null {
     return this.data?.settings ?? null;
@@ -115,10 +116,10 @@ class Store {
     }
   }
 
-  notify(text: string) {
+  notify(text: string, ms = 4200) {
     this.notice = text;
     window.clearTimeout(this.noticeTimer);
-    this.noticeTimer = window.setTimeout(() => (this.notice = null), 4200);
+    this.noticeTimer = window.setTimeout(() => (this.notice = null), ms);
   }
 
   fail(e: unknown) {
@@ -244,10 +245,17 @@ class Store {
     try {
       const found = await api.appUpdateCheck();
       this.appUpdate = found;
-      if (!silent || found) {
-        this.notify(
-          found ? t("store.appUpdateFound", { version: found.version }) : t("store.appUpToDate"),
-        );
+      if (this.data) this.data.settings.last_app_update_check = Date.now();
+      if (found) {
+        // Background checks run periodically: only pop a toast when the
+        // version is new, otherwise an available update would spam every hour.
+        if (!silent || found.version !== this.notifiedUpdateVersion) {
+          this.notifiedUpdateVersion = found.version;
+          this.notify(t("store.appUpdateFound", { version: found.version }), 9000);
+        }
+      } else if (!silent) {
+        this.notifiedUpdateVersion = "";
+        this.notify(t("store.appUpToDate"));
       }
     } catch (e) {
       if (!silent) this.fail(e);
