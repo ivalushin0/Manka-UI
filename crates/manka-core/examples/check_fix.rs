@@ -16,17 +16,30 @@ fn main() -> Result<(), String> {
     let hostlist = lists::effective_hostlist(&paths);
     let text = std::fs::read_to_string(&hostlist).map_err(|e| e.to_string())?;
     println!("effective hostlist: {hostlist:?} ({count} entries)");
-    for domain in ["pclead.co.uk", "nothingthere.co.uk", "youtube.com", "^dns.google"] {
+    for domain in [
+        "pclead.co.uk",
+        "nothingthere.co.uk",
+        "youtube.com",
+        "^dns.google",
+    ] {
         println!("  {domain}: {}", text.lines().any(|l| l.trim() == domain));
     }
     let exclude = std::fs::read_to_string(paths.exclude_list()).unwrap_or_default();
-    for domain in ["accounts.google.com", "www.gstatic.com", "ssl.gstatic.com", "fonts.googleapis.com"] {
-        println!("  exclude {domain}: {}", exclude.lines().any(|l| l.trim() == domain));
+    for domain in [
+        "accounts.google.com",
+        "www.gstatic.com",
+        "ssl.gstatic.com",
+        "fonts.googleapis.com",
+    ] {
+        println!(
+            "  exclude {domain}: {}",
+            exclude.lines().any(|l| l.trim() == domain)
+        );
     }
 
     let settings = Settings::load(&paths);
-    let strategy = repository::active(&paths, &settings, settings.engine)
-        .ok_or("no active strategy")?;
+    let strategy =
+        repository::active(&paths, &settings, settings.engine).ok_or("no active strategy")?;
     let kit = strategy.kit_id.as_ref().map(|id| paths.kit(id));
     let rendered = args::render(
         &strategy,

@@ -136,8 +136,15 @@ pub fn ensure_defaults(paths: &Paths) -> std::io::Result<u32> {
         .filter(|l| !l.is_empty())
         .collect();
     let mut changed = !file.exists();
-    for domain in TGWS_DOMAINS_ASSET.lines().map(str::trim).filter(|l| !l.is_empty()) {
-        if !lines.iter().any(|existing| existing.eq_ignore_ascii_case(domain)) {
+    for domain in TGWS_DOMAINS_ASSET
+        .lines()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+    {
+        if !lines
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(domain))
+        {
             lines.push(domain.to_string());
             changed = true;
         }
@@ -296,7 +303,10 @@ mod tests {
 
     #[test]
     fn deobfuscates_cf_domains() {
-        assert_eq!(deobfuscate_cf_domain("virkgj.com").as_deref(), Some("pclead.co.uk"));
+        assert_eq!(
+            deobfuscate_cf_domain("virkgj.com").as_deref(),
+            Some("pclead.co.uk")
+        );
         assert_eq!(
             deobfuscate_cf_domain("zaftuzsftqdq.com").as_deref(),
             Some("nothingthere.co.uk")

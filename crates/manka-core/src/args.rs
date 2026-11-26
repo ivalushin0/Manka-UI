@@ -160,8 +160,8 @@ fn inject_hostlist(
                 || a == "--payload=http_req"
                 || a.starts_with("--payload=tls_client_hello")
         });
-        let has_host_filter = has_arg(profile, "--hostlist=")
-            || has_arg(profile, "--hostlist-domains=");
+        let has_host_filter =
+            has_arg(profile, "--hostlist=") || has_arg(profile, "--hostlist-domains=");
         // In "list" scope both TCP desync and the QUIC drop must be limited to
         // the hostlist. Dropping QUIC for the whole system makes normal sites
         // (Google sign-in, browsers using HTTP/3) hang until the TCP fallback.
@@ -408,10 +408,7 @@ pub fn tgws_args(settings: &Settings) -> Vec<String> {
     // explicit DC targets. With --default-domains they would make CF slower,
     // so the built-in targets are only added for the direct-only mode.
     let dcs: Vec<String> = if user_dcs.is_empty() && !settings.tgws_cloudflare {
-        vec![
-            "2:149.154.167.220".into(),
-            "4:149.154.167.220".into(),
-        ]
+        vec!["2:149.154.167.220".into(), "4:149.154.167.220".into()]
     } else {
         user_dcs
     };
@@ -564,7 +561,11 @@ mod tests {
             "--hostlist={}",
             paths.hostlist_file().to_string_lossy().replace('\\', "/")
         );
-        assert!(r.args.contains(&hostlist), "QUIC drop must be hostlist-scoped: {:?}", r.args);
+        assert!(
+            r.args.contains(&hostlist),
+            "QUIC drop must be hostlist-scoped: {:?}",
+            r.args
+        );
     }
 
     #[test]
